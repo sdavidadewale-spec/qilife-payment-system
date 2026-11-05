@@ -1,0 +1,390 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QiLife Secure Payment</title>
+
+  <script src="https://static.airwallex.com/components/sdk/v1/index.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 30px 15px;
+      font-family: Arial, sans-serif;
+      background: #f4f6f9;
+      color: #263238;
+    }
+
+    .container {
+      max-width: 650px;
+      margin: auto;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    }
+
+    h1 {
+      color: #174b70;
+      margin-top: 0;
+    }
+
+    .section {
+      margin-top: 25px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .detail {
+      display: flex;
+      justify-content: space-between;
+      gap: 15px;
+      margin: 12px 0;
+    }
+
+    .detail span:last-child {
+      font-weight: bold;
+      text-align: right;
+    }
+
+    .total {
+      font-size: 22px;
+      color: #174b70;
+    }
+
+    .message {
+      padding: 15px;
+      background: #f4f6f9;
+      border-radius: 8px;
+      margin-top: 20px;
+    }
+
+    .error {
+      color: #b42318;
+    }
+
+    #card-container {
+      min-height: 60px;
+      margin: 20px 0;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 7px;
+      background: #174b70;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    #pay-button {
+      margin-top: 12px;
+      background: #777;
+    }
+
+    @media (max-width: 480px) {
+      .container {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>QiLife Payment</h1>
+    <p>Welcome to your secure tuition payment page.</p>
+
+    <div id="loading" class="message">
+      Loading your payment details...
+    </div>
+
+    <div id="checkout" hidden>
+      <div class="section">
+        <h2>Student Details</h2>
+
+        <div class="detail">
+          <span>Student</span>
+          <span id="student-name"></span>
+        </div>
+
+        <div class="detail">
+          <span>Email</span>
+          <span id="student-email"></span>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Course Details</h2>
+
+        <div class="detail">
+          <span>Course</span>
+          <span id="course-name"></span>
+        </div>
+
+        <div class="detail">
+          <span>Duration</span>
+          <span id="course-duration"></span>
+        </div>
+
+        <div class="detail">
+          <span>Total Course Fee</span>
+          <span id="total-fee" class="total"></span>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Payment Progress</h2>
+
+        <div class="detail">
+          <span>Instalments Paid</span>
+          <span id="paid-count"></span>
+        </div>
+
+        <div class="detail">
+          <span>Instalments Remaining</span>
+          <span id="remaining-count"></span>
+        </div>
+
+        <div class="detail">
+          <span>Amount Paid</span>
+          <span id="amount-paid"></span>
+        </div>
+
+        <div class="detail">
+          <span>Outstanding Balance</span>
+          <span id="balance"></span>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Instalment Schedule</h2>
+        <div id="payment-list"></div>
+      </div>
+
+      <div class="section">
+        <h2>Secure Card Payment</h2>
+
+        <p>
+          Prepare the secure card form for your first instalment.
+        </p>
+
+        <button id="prepare-button" type="button">
+          Prepare Card Payment
+        </button>
+
+        <div id="card-container"></div>
+
+        <button id="pay-button" type="button" disabled>
+          Pay First Instalment
+        </button>
+
+        <div id="payment-message" class="message">
+          Click Prepare Card Payment to load the secure card form.
+        </div>
+      </div>
+    </div>
+
+    <div id="error" class="message error" hidden></div>
+  </div>
+
+  <script>
+    let checkoutToken = "";
+    let paymentConsent = null;
+    let cardElement = null;
+    let airwallexInitialized = false;
+
+    async function loadCheckout() {
+      checkoutToken = window.location.pathname.split("/").pop();
+
+      try {
+        const response = await fetch(
+          `/api/enrollments/checkout/${encodeURIComponent(checkoutToken)}`
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || "Could not load payment details");
+        }
+
+        const enrollment = data.enrollment;
+        const payments = data.payments;
+
+        paymentConsent = data.payment_consent;
+
+        const money = amount =>
+          new Intl.NumberFormat("en-SG", {
+            style: "currency",
+            currency: enrollment.currency
+          }).format(Number(amount));
+
+        const paidPayments = payments.filter(
+          payment => payment.status === "paid"
+        );
+
+        const paidAmount = paidPayments.reduce(
+          (total, payment) => total + Number(payment.amount),
+          0
+        );
+
+        const balance = Number(enrollment.total_amount) - paidAmount;
+
+        document.getElementById("student-name").textContent =
+          enrollment.full_name;
+
+        document.getElementById("student-email").textContent =
+          enrollment.email;
+
+        document.getElementById("course-name").textContent =
+          enrollment.course_name;
+
+        document.getElementById("course-duration").textContent =
+          enrollment.duration_months + " months";
+
+        document.getElementById("total-fee").textContent =
+          money(enrollment.total_amount);
+
+        document.getElementById("paid-count").textContent =
+          paidPayments.length;
+
+        document.getElementById("remaining-count").textContent =
+          payments.length - paidPayments.length;
+
+        document.getElementById("amount-paid").textContent =
+          money(paidAmount);
+
+        document.getElementById("balance").textContent =
+          money(balance);
+
+        const paymentList = document.getElementById("payment-list");
+
+        payments.forEach(payment => {
+          const item = document.createElement("div");
+          item.className = "detail";
+
+          const label = document.createElement("span");
+          label.textContent = "Instalment " + payment.instalment_number;
+
+          const value = document.createElement("span");
+          value.textContent =
+            money(payment.amount) + " (" + payment.status + ")";
+
+          item.append(label, value);
+          paymentList.appendChild(item);
+        });
+
+        document.getElementById("loading").hidden = true;
+        document.getElementById("checkout").hidden = false;
+
+        document.getElementById("prepare-button").addEventListener(
+          "click",
+          prepareCardPayment
+        );
+
+      } catch (error) {
+        document.getElementById("loading").hidden = true;
+
+        const errorBox = document.getElementById("error");
+        errorBox.textContent = error.message;
+        errorBox.hidden = false;
+      }
+    }
+
+    async function prepareCardPayment() {
+      const prepareButton = document.getElementById("prepare-button");
+      const message = document.getElementById("payment-message");
+
+      prepareButton.disabled = true;
+      message.classList.remove("error");
+      message.textContent = "Creating your secure payment record...";
+
+      try {
+        const response = await fetch(
+          `/api/payment-setup/checkout/${encodeURIComponent(checkoutToken)}/payment-intent`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({})
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || "Could not prepare payment");
+        }
+
+        if (!data.payment_intent_id || !data.client_secret || !data.currency) {
+          throw new Error("Payment details returned by the server are incomplete");
+        }
+
+        message.textContent = "Connecting to Airwallex...";
+
+        if (!window.AirwallexComponentsSDK) {
+          throw new Error("Airwallex SDK could not be loaded");
+        }
+
+        if (!airwallexInitialized) {
+          await window.AirwallexComponentsSDK.init({
+            env: "prod",
+            enabledElements: ["payments"]
+          });
+
+          airwallexInitialized = true;
+        }
+
+        cardElement =
+        await window.AirwallexComponentsSDK.createElement("card", {
+            intent_id: data.payment_intent_id,
+            client_secret: data.client_secret,
+            currency: data.currency
+        });
+
+        const cardContainer = document.getElementById("card-container");
+
+        cardElement.mount(cardContainer);
+
+        cardElement.on("ready", () => {
+        message.textContent =
+            "Secure card form is ready. Payment confirmation is disabled while we finish the integration.";
+        });
+
+        cardElement.on("error", error => {
+        console.error("Airwallex card error:", error);
+
+        message.textContent =
+            "The secure card form reported an error. Please check the browser console.";
+
+        message.classList.add("error");
+        });
+
+      } catch (error) {
+        console.error("Card payment preparation error:", error);
+
+        message.textContent = error.message;
+        message.classList.add("error");
+
+        prepareButton.disabled = false;
+      }
+    }
+
+    loadCheckout();
+  </script>
+</body>
+</html>

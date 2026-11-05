@@ -1,0 +1,4 @@
+ALTER TABLE payments
+ADD COLUMN due_date DATE,
+ADD COLUMN payment_attempts INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN last_error TEXT;
