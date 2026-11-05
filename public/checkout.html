@@ -227,10 +227,10 @@
         paymentConsent = data.payment_consent;
 
         const money = amount =>
-          new Intl.NumberFormat("en-SG", {
-            style: "currency",
-            currency: enrollment.currency
-          }).format(Number(amount));
+          `${enrollment.currency} ${Number(amount).toLocaleString("en-SG", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+          })}`;
 
         const paidPayments = payments.filter(
           payment => payment.status === "paid"
