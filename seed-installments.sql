@@ -3,7 +3,7 @@ WITH schedules (course_name, student_type, plan_type, amounts) AS (
     -- Professional Certificate: Local
     ('Professional Certificate Program', 'local', 'full', ARRAY[13080.00]::NUMERIC[]),
     ('Professional Certificate Program', 'local', 'three_part', ARRAY[4535.20, 4534.00, 4534.00]),
-    ('Professional Certificate Program', 'local', 'six_part', ARRAY[2284.00, 2290.00, 2290.00, 2290.00, 2290.00, 2290.00]),
+    ('Professional Certificate Program', 'local', 'six_part', ARRAY[2294.00, 2288.00, 2288.00, 2288.00, 2288.00, 2288.00]),
 
     -- Professional Certificate: International
     ('Professional Certificate Program', 'international', 'full', ARRAY[12000.00]),
