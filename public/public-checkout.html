@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QiLife Course Enrolment</title>
+  <script src="https://static.airwallex.com/components/sdk/v1/index.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 35px 18px;
+      font-family: Arial, sans-serif;
+      background: #f3f4f6;
+      color: #30343b;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: auto;
+    }
+
+    .header {
+      margin-bottom: 25px;
+    }
+
+    .header h1 {
+      margin: 0 0 10px;
+      color: #30343b;
+      font-size: 29px;
+    }
+
+    .header p {
+      color: #69717d;
+      line-height: 1.6;
+      margin: 0;
+    }
+
+    .checkout-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .panel {
+      background: #fff;
+      border-radius: 12px;
+      padding: 28px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
+    }
+
+    h2 {
+      margin: 0 0 20px;
+      font-size: 19px;
+      color: #30343b;
+    }
+
+    .section {
+      padding-bottom: 22px;
+      margin-bottom: 22px;
+      border-bottom: 1px solid #eceef0;
+    }
+
+    .detail {
+      display: flex;
+      justify-content: space-between;
+      gap: 15px;
+      margin: 15px 0;
+      line-height: 1.5;
+    }
+
+    .detail span:first-child {
+      color: #69717d;
+    }
+
+    .detail span:last-child {
+      font-weight: 600;
+      text-align: right;
+    }
+
+    .total-box {
+      padding: 18px;
+      background: #fff4e9;
+      border-radius: 9px;
+      margin-top: 20px;
+    }
+
+    .total-box span {
+      display: block;
+      color: #8a5527;
+      margin-bottom: 8px;
+    }
+
+    .total-box strong {
+      color: #e87924;
+      font-size: 25px;
+    }
+
+    label {
+      display: block;
+      margin-top: 18px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    input {
+      width: 100%;
+      padding: 13px;
+      margin-top: 8px;
+      border: 1px solid #d5d9df;
+      border-radius: 7px;
+      font-size: 15px;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #e87924;
+      box-shadow: 0 0 0 2px rgba(232, 121, 36, 0.12);
+    }
+
+    .consent {
+      display: flex;
+      align-items: flex-start;
+      gap: 11px;
+      margin-top: 24px;
+      padding: 16px;
+      background: #fff8f1;
+      border: 1px solid #f4d7bd;
+      border-radius: 8px;
+      line-height: 1.6;
+      font-size: 13px;
+      font-weight: normal;
+    }
+
+    .consent input {
+      width: 17px;
+      height: 17px;
+      margin: 2px 0 0;
+      flex-shrink: 0;
+      accent-color: #e87924;
+    }
+
+    .consent label {
+      margin: 0;
+      font-weight: normal;
+      line-height: 1.6;
+    }
+
+    button {
+      width: 100%;
+      padding: 15px;
+      margin-top: 22px;
+      border: none;
+      border-radius: 7px;
+      background: #e87924;
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #d96b18;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .message {
+      padding: 14px;
+      margin-top: 18px;
+      background: #f3f4f6;
+      border-radius: 7px;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    .error {
+      color: #b42318;
+      background: #fff1f0;
+    }
+
+    .success {
+      color: #167647;
+      background: #ecfdf3;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .payment-placeholder {
+      padding: 18px;
+      background: #fff8f1;
+      border: 1px solid #f4d7bd;
+      border-radius: 8px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 750px) {
+      body {
+        padding: 20px 12px;
+      }
+
+      .checkout-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .panel {
+        padding: 21px;
+      }
+
+      .header h1 {
+        font-size: 24px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>QiLife Course Enrolment</h1>
+      <p>
+        Review your course and payment schedule. Enter your details
+        and accept the payment terms to continue.
+      </p>
+    </div>
+
+    <div id="loading" class="message">
+      Loading course details...
+    </div>
+
+    <div id="checkout" class="checkout-grid hidden">
+
+      <section class="panel">
+        <div class="section">
+          <h2>Course Details</h2>
+
+          <div class="detail">
+            <span>Course</span>
+            <span id="course-name"></span>
+          </div>
+
+          <div class="detail">
+            <span>Duration</span>
+            <span id="course-duration"></span>
+          </div>
+
+          <div class="detail">
+            <span>Student Type</span>
+            <span id="student-type"></span>
+          </div>
+
+          <div class="detail">
+            <span>Payment Plan</span>
+            <span id="payment-plan"></span>
+          </div>
+
+          <div class="total-box">
+            <span>Total Course Fee</span>
+            <strong id="total-fee"></strong>
+          </div>
+        </div>
+
+        <div>
+          <h2>Payment Schedule</h2>
+          <div id="payment-schedule"></div>
+          <p style="font-size:12px;color:#69717d;line-height:1.5">
+            All payments are shown in the currency listed above.
+          </p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div id="student-panel">
+          <h2>Student Information</h2>
+
+          <form id="enrollment-form">
+            <label for="full-name">Full Name</label>
+            <input
+              type="text"
+              id="full-name"
+              maxlength="255"
+              autocomplete="name"
+              required
+            >
+
+            <label for="email">Email Address</label>
+            <input
+              type="email"
+              id="email"
+              maxlength="255"
+              autocomplete="email"
+              required
+            >
+
+            <div class="consent">
+              <input
+                type="checkbox"
+                id="consent"
+                required
+              >
+
+              <label for="consent" id="consent-text">
+                I authorise QiLife to charge my saved payment card for the course fees shown on this page.
+              </label>
+            </div>
+
+            <button type="submit" id="submit-button" disabled>
+              Continue to Secure Payment
+            </button>
+          </form>
+        </div>
+
+        <div id="payment-panel" class="hidden">
+          <h2>Secure Card Payment</h2>
+
+          <p>Enter your card details to pay the first instalment.</p>
+
+          <div id="card-container"></div>
+
+          <button type="button" id="pay-button" disabled>
+            Pay First Instalment
+          </button>
+
+          <button
+            type="button"
+            id="retry-setup-button"
+            class="hidden"
+          >
+            Retry Payment Setup
+          </button>
+
+          <div id="payment-status" class="message hidden"></div>
+        </div>
+
+        <div id="message" class="message hidden"></div>
+      </section>
+    </div>
+
+    <div id="error" class="message error hidden"></div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const slug = params.get("plan");
+    const existingToken = params.get("checkout_token");
+
+    const loading = document.getElementById("loading");
+    const checkout = document.getElementById("checkout");
+    const errorBox = document.getElementById("error");
+    const messageBox = document.getElementById("message");
+    const submitButton = document.getElementById("submit-button");
+    const consentCheckbox = document.getElementById("consent");
+    const enrollmentForm = document.getElementById("enrollment-form");
+    const studentPanel = document.getElementById("student-panel");
+    const paymentPanel = document.getElementById("payment-panel");
+    const payButton = document.getElementById("pay-button");
+    const retrySetupButton = document.getElementById("retry-setup-button");
+    const paymentStatusBox = document.getElementById("payment-status");
+
+    let isSubmitting = false;
+    let isSettingUp = false;
+    let isPaying = false;
+    let selectedPlan = null;
+    let selectedInstalments = [];
+    let selectedConsentVersion = null;
+    let checkoutToken = existingToken;
+    let cardElement = null;
+    let cardMounted = false;
+    let cardReady = false;
+    let sdkInitialized = false;
+    let currentPaymentSetup = null;
+
+    function money(amount, currency) {
+      return `${currency} ${Number(amount).toLocaleString("en-SG", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      })}`;
+    }
+
+    function showError(message) {
+      loading.classList.add("hidden");
+      checkout.classList.add("hidden");
+      errorBox.textContent = message;
+      errorBox.classList.remove("hidden");
+    }
+
+    function setPaymentStatus(message, type = "") {
+      paymentStatusBox.textContent = message;
+      paymentStatusBox.className = "message";
+
+      if (type) {
+        paymentStatusBox.classList.add(type);
+      }
+
+      paymentStatusBox.classList.remove("hidden");
+    }
+
+    function updateContinueButton() {
+      submitButton.disabled =
+        !consentCheckbox.checked ||
+        !enrollmentForm.checkValidity() ||
+        isSubmitting;
+    }
+
+    function showPaymentPanel() {
+      studentPanel.classList.add("hidden");
+      paymentPanel.classList.remove("hidden");
+      messageBox.classList.add("hidden");
+    }
+
+    function updateCheckoutUrl(token) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("plan", slug);
+      url.searchParams.set("checkout_token", token);
+
+      window.history.replaceState(
+        {},
+        "",
+        url.pathname + url.search + url.hash
+      );
+    }
+
+    function getIdempotencyKey(email) {
+      const storageKey =
+        `qilife-enrolment-${slug}-${email.trim().toLowerCase()}`;
+
+      let requestId = sessionStorage.getItem(storageKey);
+
+      if (!requestId) {
+        const bytes = new Uint8Array(32);
+        crypto.getRandomValues(bytes);
+
+        requestId = Array.from(bytes)
+          .map(byte => byte.toString(16).padStart(2, "0"))
+          .join("");
+
+        sessionStorage.setItem(storageKey, requestId);
+      }
+
+      return requestId;
+    }
+
+    async function readResponse(response) {
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.message || "The request could not be completed."
+        );
+      }
+
+      return data;
+    }
+
+    async function getEnrollmentStatus(token) {
+      const response = await fetch(
+        `/api/enrollments/checkout/${encodeURIComponent(token)}`
+      );
+
+      return readResponse(response);
+    }
+
+    function getFirstPayment(data) {
+      return (data.payments || []).find(
+        payment => Number(payment.instalment_number) === 1
+      );
+    }
+
+    async function checkIfPaid(token) {
+      const data = await getEnrollmentStatus(token);
+      const firstPayment = getFirstPayment(data);
+
+      return Boolean(
+        firstPayment &&
+        String(firstPayment.status).toLowerCase() === "paid"
+      );
+    }
+
+    async function showPaymentReceived() {
+      isPaying = false;
+      payButton.disabled = true;
+      payButton.textContent = "Payment Received";
+      retrySetupButton.classList.add("hidden");
+
+      setPaymentStatus(
+        "Payment received. Your first instalment has been confirmed.",
+        "success"
+      );
+    }
+
+    async function waitForPaymentConfirmation(token) {
+      setPaymentStatus(
+        "Your payment was submitted. We are confirming it. Please do not pay again."
+      );
+
+      for (let attempt = 0; attempt < 20; attempt++) {
+        try {
+          if (await checkIfPaid(token)) {
+            await showPaymentReceived();
+            return true;
+          }
+        } catch (error) {
+          // Keep checking in case the connection is temporarily unavailable.
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+
+      isPaying = false;
+      payButton.disabled = true;
+
+      setPaymentStatus(
+        "Your payment is still being confirmed. Please do not pay again. Refresh this page later to check its status."
+      );
+
+      return false;
+    }
+
+    async function mountCardElement(setupData) {
+      if (
+        !setupData.client_secret ||
+        !setupData.payment_intent_id ||
+        !setupData.customer_id ||
+        !setupData.payment_consent
+      ) {
+        throw new Error(
+          "The secure payment details are incomplete. Please try again."
+        );
+      }
+
+      currentPaymentSetup = setupData;
+
+      if (!window.AirwallexComponentsSDK) {
+        throw new Error(
+          "The secure card form could not load. Please check your connection and retry."
+        );
+      }
+
+      if (!sdkInitialized) {
+        await window.AirwallexComponentsSDK.init({
+          env: "prod",
+          enabledElements: ["payments"]
+        });
+
+        sdkInitialized = true;
+      }
+
+      if (!cardElement) {
+        cardElement =
+          await window.AirwallexComponentsSDK.createElement("card", {
+            autoCapture: true
+          });
+
+        if (!cardElement) {
+          throw new Error("Could not create the secure card form.");
+        }
+
+        cardElement.on("ready", () => {
+          cardReady = true;
+          setPaymentStatus("Enter your card details to continue.");
+        });
+
+        cardElement.on("change", event => {
+          const completed = Boolean(
+            event && event.detail && event.detail.completed
+          );
+
+          payButton.disabled = !cardReady || !completed || isPaying;
+        });
+      }
+
+      if (!cardMounted) {
+        cardElement.mount("card-container");
+        cardMounted = true;
+      }
+    }
+
+    async function preparePayment() {
+      if (!checkoutToken || isSettingUp) {
+        return;
+      }
+
+      isSettingUp = true;
+      retrySetupButton.classList.add("hidden");
+      payButton.disabled = true;
+
+      try {
+        if (await checkIfPaid(checkoutToken)) {
+          await showPaymentReceived();
+          return;
+        }
+
+        setPaymentStatus("Preparing your secure card payment...");
+
+        const response = await fetch(
+          `/api/payment-setup/checkout/${encodeURIComponent(checkoutToken)}/payment-intent`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            }
+          }
+        );
+
+        const setupData = await response.json().catch(() => ({}));
+
+        if (response.status === 409) {
+          await waitForPaymentConfirmation(checkoutToken);
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            setupData.message ||
+            "Could not prepare your card payment. Please retry."
+          );
+        }
+
+        await mountCardElement(setupData);
+
+        setPaymentStatus(
+          "Enter your card details to pay the first instalment."
+        );
+
+      } catch (error) {
+        payButton.disabled = true;
+
+        setPaymentStatus(error.message, "error");
+        retrySetupButton.classList.remove("hidden");
+
+      } finally {
+        isSettingUp = false;
+      }
+    }
+
+    async function loadPlan() {
+      if (!slug) {
+        showError("This checkout link is incomplete.");
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/public-checkout/${encodeURIComponent(slug)}`
+        );
+
+        const data = await readResponse(response);
+
+        if (
+          !data.plan ||
+          !Array.isArray(data.instalments) ||
+          typeof data.consent_version !== "string" ||
+          typeof data.consent_text !== "string" ||
+          !data.consent_text.trim()
+        ) {
+          throw new Error("The checkout details or payment agreement are incomplete.");
+        }
+
+        selectedPlan = data.plan;
+        selectedInstalments = data.instalments;
+        selectedConsentVersion = data.consent_version;
+
+        document.getElementById("course-name").textContent =
+          selectedPlan.course_name;
+
+        document.getElementById("course-duration").textContent =
+          `${selectedPlan.duration_months} months`;
+
+        document.getElementById("student-type").textContent =
+          selectedPlan.student_type === "local"
+            ? "Singapore Student"
+            : "International Student";
+
+        document.getElementById("payment-plan").textContent =
+          selectedPlan.instalment_count + " instalments";
+
+        document.getElementById("total-fee").textContent =
+          money(selectedPlan.total_amount, selectedPlan.currency);
+
+        const schedule = document.getElementById("payment-schedule");
+        schedule.replaceChildren();
+
+        selectedInstalments.forEach(instalment => {
+          const item = document.createElement("div");
+          item.className = "detail";
+
+          const label = document.createElement("span");
+          label.textContent =
+            `Instalment ${instalment.instalment_number}`;
+
+          const amount = document.createElement("span");
+          amount.textContent =
+            money(instalment.amount, selectedPlan.currency);
+
+          item.append(label, amount);
+          schedule.appendChild(item);
+        });
+
+        document.getElementById("consent-text").textContent =
+          data.consent_text;
+
+        loading.classList.add("hidden");
+        checkout.classList.remove("hidden");
+
+        if (checkoutToken) {
+          showPaymentPanel();
+          await preparePayment();
+        }
+
+      } catch (error) {
+        showError(error.message);
+      }
+    }
+
+    consentCheckbox.addEventListener("change", updateContinueButton);
+    enrollmentForm.addEventListener("input", updateContinueButton);
+    enrollmentForm.addEventListener("change", updateContinueButton);
+
+    enrollmentForm.addEventListener("submit", async event => {
+      event.preventDefault();
+
+      if (!selectedPlan || !slug || isSubmitting || checkoutToken) {
+        return;
+      }
+
+      if (!consentCheckbox.checked) {
+        messageBox.className = "message error";
+        messageBox.textContent =
+          "Please accept the payment terms to continue.";
+        messageBox.classList.remove("hidden");
+        return;
+      }
+
+      if (!selectedConsentVersion) {
+        messageBox.className = "message error";
+        messageBox.textContent =
+          "The payment agreement could not be verified. Please reload the page.";
+        messageBox.classList.remove("hidden");
+        return;
+      }
+
+      const student = {
+        full_name: document.getElementById("full-name").value.trim(),
+        email: document.getElementById("email").value.trim(),
+        consent_accepted: true,
+        consent_version: selectedConsentVersion
+      };
+
+      isSubmitting = true;
+      submitButton.disabled = true;
+      consentCheckbox.disabled = true;
+      submitButton.textContent = "Creating Your Enrolment...";
+
+      messageBox.className = "message";
+      messageBox.textContent = "Please wait while we prepare your enrolment.";
+      messageBox.classList.remove("hidden");
+
+      try {
+        const requestId = getIdempotencyKey(student.email);
+
+        const response = await fetch(
+          `/api/public-checkout/${encodeURIComponent(slug)}/enroll`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": requestId
+            },
+            body: JSON.stringify(student)
+          }
+        );
+
+        const data = await readResponse(response);
+
+        if (!data.checkout_url) {
+          throw new Error(
+            "Your enrolment was created, but the secure checkout link was not returned. Please contact QiLife before trying again."
+          );
+        }
+
+        const checkoutUrl = new URL(
+          data.checkout_url,
+          window.location.origin
+        );
+        checkoutToken = checkoutUrl.searchParams.get("checkout_token");
+
+        if (!checkoutToken) {
+          throw new Error(
+            "Could not retrieve your secure payment link."
+          );
+        }
+
+        updateCheckoutUrl(checkoutToken);
+        showPaymentPanel();
+        await preparePayment();
+
+      } catch (error) {
+        messageBox.className = "message error";
+        messageBox.textContent = error.message;
+        messageBox.classList.remove("hidden");
+
+        isSubmitting = false;
+        consentCheckbox.disabled = false;
+        submitButton.textContent = "Continue to Secure Payment";
+        updateContinueButton();
+      }
+    });
+
+    retrySetupButton.addEventListener("click", preparePayment);
+
+    payButton.addEventListener("click", async () => {
+      if (!cardElement || !currentPaymentSetup || isPaying) {
+        return;
+      }
+
+      isPaying = true;
+      payButton.disabled = true;
+      payButton.textContent = "Submitting Payment...";
+
+      try {
+        await cardElement.confirm({
+          client_secret: currentPaymentSetup.client_secret,
+          intent_id: currentPaymentSetup.payment_intent_id,
+          customer_id: currentPaymentSetup.customer_id,
+          payment_consent: currentPaymentSetup.payment_consent
+        });
+
+        payButton.textContent = "Payment Submitted";
+        await waitForPaymentConfirmation(checkoutToken);
+
+      } catch (error) {
+        isPaying = false;
+        payButton.disabled = false;
+        payButton.textContent = "Pay First Instalment";
+
+        setPaymentStatus(
+          error.message || "Your payment could not be completed. Please check your card details and try again.",
+          "error"
+        );
+      }
+    });
+
+    loadPlan();
+  </script>
+</body>
+</html>

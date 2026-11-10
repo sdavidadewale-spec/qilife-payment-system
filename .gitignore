@@ -3,6 +3,7 @@ node_modules
 *.backup
 
 test-*.js
+!test-db.js
 airwallex-customers.js
 
 *.backup.js

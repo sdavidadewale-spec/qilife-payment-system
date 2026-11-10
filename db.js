@@ -1,16 +1,26 @@
 
 require("dotenv").config();
 
-const dns = require("dns");
 const { Pool } = require("pg");
 
-dns.lookup(process.env.DB_HOST, (error, address) => {
-  if (error) {
-    console.error("DATABASE DNS TEST:", error.message);
-  } else {
-    console.log("DATABASE DNS TEST SUCCESS:", address);
+
+// TEST_DATABASE_SAFETY_GUARD
+if (process.env.NODE_ENV === "test") {
+  const allowedTestHosts = ["localhost", "127.0.0.1", "::1"];
+  const testHost = (process.env.DB_HOST || "").toLowerCase();
+
+  if (process.env.DB_NAME !== "qilife_test_db") {
+    throw new Error(
+      "TEST SAFETY BLOCKED: Test mode may only connect to qilife_test_db."
+    );
   }
-});
+
+  if (!allowedTestHosts.includes(testHost)) {
+    throw new Error(
+      "TEST SAFETY BLOCKED: Test mode may only use a local database host."
+    );
+  }
+}
 
 const isProduction = process.env.NODE_ENV === "production";
 

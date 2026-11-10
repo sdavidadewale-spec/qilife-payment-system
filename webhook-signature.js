@@ -1,11 +1,28 @@
 const crypto = require("crypto");
 
-function verifyWebhookSignature(req) {
-  const secret = process.env.AIRWALLEX_WEBHOOK_SECRET;
+function verifyWebhookSignature(req, secretOverride) {
+  const secret =
+    secretOverride !== undefined
+      ? secretOverride
+      : process.env.AIRWALLEX_WEBHOOK_SECRET;
+
   const timestamp = req.headers["x-timestamp"];
   const signature = req.headers["x-signature"];
 
-  if (!secret || !timestamp || !signature || !req.rawBody) {
+  if (
+    typeof secret !== "string" ||
+    !secret ||
+    !timestamp ||
+    !signature ||
+    !req.rawBody
+  ) {
+    return false;
+  }
+
+  if (
+    !/^\d+$/.test(timestamp) ||
+    !/^[a-fA-F0-9]{64}$/.test(signature)
+  ) {
     return false;
   }
 
