@@ -3,6 +3,9 @@ const crypto = require("crypto");
 const router = express.Router();
 const pool = require("../db");
 const { isValidPaymentSchedule } = require("../utils/payment-schedule");
+const {
+  validateFirstPaymentIntent,
+} = require("../utils/first-payment-intent-validation");
 
 const {
   createAirwallexCustomer,
@@ -390,11 +393,11 @@ router.post("/checkout/:token/payment-intent", async (req, res) => {
       });
     }
 
-    if (!intent.id) {
-      throw new Error(
-        "Airwallex did not return a PaymentIntent ID"
-      );
-    }
+    validateFirstPaymentIntent(
+      intent,
+      payment,
+      payment.airwallex_payment_id || null
+    );
 
     // Save the PaymentIntent in both payment records.
     const saveClient = await pool.connect();
@@ -468,6 +471,19 @@ router.post("/checkout/:token/payment-intent", async (req, res) => {
       return res.status(409).json({
         message:
           "This payment has already completed. Please refresh.",
+      });
+    }
+
+    if (intent.status !== "REQUIRES_PAYMENT_METHOD") {
+      console.error(
+        "First PaymentIntent is not ready for card payment:",
+        intent.id,
+        intent.status
+      );
+
+      return res.status(422).json({
+        message:
+          "Payment setup needs attention. Please contact QiLife support. Do not retry this payment.",
       });
     }
 

@@ -619,6 +619,19 @@
           return;
         }
 
+        if (response.status === 422) {
+          payButton.disabled = true;
+          retrySetupButton.classList.add("hidden");
+
+          setPaymentStatus(
+            setupData.message ||
+            "Payment setup needs attention. Please contact QiLife support.",
+            "error"
+          );
+
+          return;
+        }
+
         if (!response.ok) {
           throw new Error(
             setupData.message ||
