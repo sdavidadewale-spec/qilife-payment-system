@@ -212,6 +212,9 @@ test(
            amount,
            status,
            paid_at,
+           processing_started_at,
+           processing_claim_token,
+           airwallex_payment_intent_status,
            to_char(due_date, 'YYYY-MM-DD') AS due_date
          FROM payments
          WHERE subscription_id = $1
@@ -226,7 +229,21 @@ test(
       assert.equal(first.status, "paid");
       assert.equal(Number(first.amount), 4480);
       assert.ok(first.paid_at);
+      assert.equal(first.processing_started_at, null);
+      assert.equal(first.processing_claim_token, null);
+      assert.equal(first.airwallex_payment_intent_status, "SUCCEEDED");
       assert.equal(first.due_date, null);
+
+      const intentHistoryResult = await pool.query(
+        `SELECT status
+         FROM airwallex_payment_intents
+         WHERE payment_id = $1
+           AND airwallex_payment_intent_id = $2`,
+        [fixture.firstPaymentId, fixture.paymentIntentId]
+      );
+
+      assert.equal(intentHistoryResult.rows.length, 1);
+      assert.equal(intentHistoryResult.rows[0].status, "SUCCEEDED");
 
       assert.equal(second.status, "pending");
       assert.equal(third.status, "pending");
