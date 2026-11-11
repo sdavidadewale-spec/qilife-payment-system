@@ -222,11 +222,13 @@ test(
     try {
       setMockConsent(fixture);
       const event = makeConsentEvent(fixture);
+      const callsBeforeFirst = retrievalCalls;
 
       const firstResult = await sendWebhook(event);
 
       assert.equal(firstResult.statusCode, 200);
       assert.equal(firstResult.responseBody.processed, true);
+      assert.equal(retrievalCalls, callsBeforeFirst + 1);
 
       const savedResult = await pool.query(
         `SELECT
@@ -259,7 +261,7 @@ test(
 
       assert.equal(duplicateResult.statusCode, 200);
       assert.equal(duplicateResult.responseBody.duplicate, true);
-      assert.equal(retrievalCalls, callsBeforeDuplicate + 1);
+      assert.equal(retrievalCalls, callsBeforeDuplicate);
 
       const eventCount = await pool.query(
         "SELECT COUNT(*)::int AS count FROM webhook_events WHERE event_id = $1",

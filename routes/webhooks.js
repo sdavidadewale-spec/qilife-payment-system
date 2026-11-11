@@ -48,6 +48,21 @@ router.post("/", async (req, res) => {
   let verifiedConsent = null;
 
   try {
+    // Avoid another Airwallex lookup for an already processed consent event.
+    if (event.name === "payment_consent.verified") {
+      const existingEventResult = await pool.query(
+        "SELECT 1 FROM webhook_events WHERE event_id = $1 LIMIT 1",
+        [event.id]
+      );
+
+      if (existingEventResult.rowCount > 0) {
+        return res.status(200).json({
+          received: true,
+          duplicate: true,
+        });
+      }
+    }
+
     // Retrieve and validate the consent before opening a database transaction.
     if (event.name === "payment_consent.verified") {
       if (!eventObject?.id) {
