@@ -1088,3 +1088,125 @@ test("processor moves an uncertain retry confirmation to manual review", async (
 test.after(async () => {
   await pool.end();
 });
+
+test("processor blocks recurring payments when card consent is missing or unverified", async () => {
+  const client = await pool.connect();
+
+  try {
+    const databaseResult = await client.query(
+      "SELECT current_database() AS name"
+    );
+
+    assert.equal(
+      databaseResult.rows[0].name,
+      "qilife_test_db",
+      "Test must use qilife_test_db"
+    );
+
+    await client.query("BEGIN");
+
+    const db = createTransactionalAdapter(client);
+
+    let createCalls = 0;
+    let retrieveCalls = 0;
+    let confirmCalls = 0;
+
+    const airwallex = {
+      async createRecurringAirwallexPaymentIntent() {
+        createCalls++;
+        throw new Error("Unexpected Airwallex create call");
+      },
+
+      async retrieveAirwallexPaymentIntent() {
+        retrieveCalls++;
+        throw new Error("Unexpected Airwallex retrieve call");
+      },
+
+      async confirmAirwallexPaymentIntent() {
+        confirmCalls++;
+        throw new Error("Unexpected Airwallex confirm call");
+      },
+    };
+
+    const invalidConsentCases = [
+      {
+        label: "PENDING consent",
+        sql: `
+          UPDATE subscriptions
+          SET payment_consent_status = 'PENDING'
+          WHERE id = $1
+        `,
+      },
+      {
+        label: "missing consent ID",
+        sql: `
+          UPDATE subscriptions
+          SET airwallex_payment_consent_id = NULL
+          WHERE id = $1
+        `,
+      },
+      {
+        label: "missing payment method ID",
+        sql: `
+          UPDATE subscriptions
+          SET airwallex_payment_method_id = NULL
+          WHERE id = $1
+        `,
+      },
+      {
+        label: "non-card payment method",
+        sql: `
+          UPDATE subscriptions
+          SET airwallex_payment_method_type = 'bank'
+          WHERE id = $1
+        `,
+      },
+    ];
+
+    for (const invalidCase of invalidConsentCases) {
+      const fixture = await createTestPayment(client);
+
+      await client.query(invalidCase.sql, [fixture.subscriptionId]);
+
+      await assert.rejects(
+        () => processRecurringPayment(fixture.paymentId, { db, airwallex }),
+        /Verified recurring card consent is required/,
+        invalidCase.label
+      );
+
+      const paymentResult = await client.query(
+        `SELECT status, processing_claim_token,
+                processing_started_at, manual_review_required,
+                paid_at
+         FROM payments
+         WHERE id = $1`,
+        [fixture.paymentId]
+      );
+
+      assert.equal(paymentResult.rows.length, 1);
+
+      const payment = paymentResult.rows[0];
+
+      assert.equal(payment.status, "pending", invalidCase.label);
+      assert.equal(payment.processing_claim_token, null, invalidCase.label);
+      assert.equal(payment.processing_started_at, null, invalidCase.label);
+      assert.equal(payment.manual_review_required, false, invalidCase.label);
+      assert.equal(payment.paid_at, null, invalidCase.label);
+
+      console.log(`Blocked ${invalidCase.label}: passed`);
+    }
+
+    assert.equal(createCalls, 0);
+    assert.equal(retrieveCalls, 0);
+    assert.equal(confirmCalls, 0);
+
+    console.log("No Airwallex calls made: passed");
+    console.log("All invalid consent cases rolled back their payment claims: passed");
+  } finally {
+    try {
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+  }
+});
