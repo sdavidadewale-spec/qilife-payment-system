@@ -483,3 +483,87 @@ test(
     }
   }
 );
+
+test(
+  "the same failed PaymentAttempt under a different event ID is not counted twice",
+  async () => {
+    const fixture = await createFixture();
+
+    try {
+      const firstEvent = makeAttemptEvent(fixture, {
+        eventId: `event-first-${crypto.randomUUID()}`,
+      });
+
+      const firstResult = await sendWebhook(firstEvent);
+
+      assert.equal(firstResult.statusCode, 200);
+      assert.equal(firstResult.responseBody.processed, true);
+
+      const beforeDuplicate = await pool.query(
+        `SELECT
+           status,
+           payment_attempts,
+           next_retry_at,
+           manual_review_required
+         FROM payments
+         WHERE id = $1`,
+        [fixture.paymentId]
+      );
+
+      const originalRetryTime =
+        beforeDuplicate.rows[0].next_retry_at.getTime();
+
+      const secondEvent = makeAttemptEvent(fixture, {
+        eventId: `event-second-${crypto.randomUUID()}`,
+      });
+
+      const secondResult = await sendWebhook(secondEvent);
+
+      assert.equal(secondResult.statusCode, 200);
+      assert.equal(secondResult.responseBody.processed, true);
+      assert.notEqual(secondResult.responseBody.duplicate, true);
+
+      const attemptResult = await pool.query(
+        `SELECT
+           airwallex_payment_attempt_id,
+           status,
+           attempt_number
+         FROM airwallex_payment_attempts
+         WHERE payment_id = $1`,
+        [fixture.paymentId]
+      );
+
+      assert.equal(attemptResult.rows.length, 1);
+      assert.equal(
+        attemptResult.rows[0].airwallex_payment_attempt_id,
+        fixture.paymentAttemptId
+      );
+      assert.equal(attemptResult.rows[0].status, "FAILED");
+      assert.equal(Number(attemptResult.rows[0].attempt_number), 1);
+
+      const afterDuplicate = await pool.query(
+        `SELECT
+           status,
+           payment_attempts,
+           next_retry_at,
+           manual_review_required
+         FROM payments
+         WHERE id = $1`,
+        [fixture.paymentId]
+      );
+
+      assert.equal(afterDuplicate.rows[0].status, "pending");
+      assert.equal(afterDuplicate.rows[0].payment_attempts, 1);
+      assert.equal(
+        afterDuplicate.rows[0].next_retry_at.getTime(),
+        originalRetryTime
+      );
+      assert.equal(
+        afterDuplicate.rows[0].manual_review_required,
+        false
+      );
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  }
+);

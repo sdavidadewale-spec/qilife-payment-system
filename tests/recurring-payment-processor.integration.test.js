@@ -1210,3 +1210,168 @@ test("processor blocks recurring payments when card consent is missing or unveri
     }
   }
 });
+
+test("processor detects a lost claim after slow Airwallex confirmation", async () => {
+  const setupClient = await pool.connect();
+
+  let fixture;
+  let firstPromise;
+  let secondPromise;
+  let releaseConfirmation;
+  let confirmationReleased = false;
+
+  let signalConfirmationStarted;
+
+  const confirmationStarted = new Promise((resolve) => {
+    signalConfirmationStarted = resolve;
+  });
+
+  const confirmationGate = new Promise((resolve) => {
+    releaseConfirmation = resolve;
+  });
+
+  try {
+    const databaseResult = await setupClient.query(
+      "SELECT current_database() AS name"
+    );
+
+    assert.equal(
+      databaseResult.rows[0].name,
+      "qilife_test_db",
+      "Test must use qilife_test_db"
+    );
+
+    fixture = await createTestPayment(setupClient);
+
+    const paymentIntentId =
+      `slow-confirmation-${crypto.randomUUID()}`;
+
+    let confirmCalls = 0;
+    let retrieveCalls = 0;
+    let createCalls = 0;
+
+    const airwallex = {
+      async createRecurringAirwallexPaymentIntent() {
+        createCalls++;
+
+        return {
+          id: paymentIntentId,
+          status: "REQUIRES_PAYMENT_METHOD",
+          merchant_order_id: fixture.paymentId,
+          amount: 100,
+          currency: "SGD",
+        };
+      },
+
+      async confirmAirwallexPaymentIntent() {
+        confirmCalls++;
+        signalConfirmationStarted();
+        return confirmationGate;
+      },
+
+      async retrieveAirwallexPaymentIntent() {
+        retrieveCalls++;
+
+        return {
+          id: paymentIntentId,
+          status: "REQUIRES_PAYMENT_METHOD",
+          merchant_order_id: fixture.paymentId,
+          amount: 100,
+          currency: "SGD",
+        };
+      },
+    };
+
+    firstPromise = processRecurringPayment(
+      fixture.paymentId,
+      { db: pool, airwallex }
+    );
+
+    await confirmationStarted;
+
+    const staleClaim = await setupClient.query(
+      `UPDATE payments
+       SET processing_started_at = NOW() - INTERVAL '6 minutes'
+       WHERE id = $1
+         AND status = 'processing'`,
+      [fixture.paymentId]
+    );
+
+    assert.equal(staleClaim.rowCount, 1);
+
+    secondPromise = processRecurringPayment(
+      fixture.paymentId,
+      { db: pool, airwallex }
+    );
+
+    const secondResult = await secondPromise;
+
+    assert.equal(secondResult.status, "manual_review_required");
+    assert.equal(confirmCalls, 1);
+    assert.equal(retrieveCalls, 1);
+    assert.equal(createCalls, 1);
+
+    releaseConfirmation({ status: "PENDING" });
+    confirmationReleased = true;
+
+    await assert.rejects(
+      firstPromise,
+      /Recurring payment claim was lost/
+    );
+
+    const paymentResult = await setupClient.query(
+      `SELECT
+         status,
+         manual_review_required,
+         processing_claim_token,
+         paid_at
+       FROM payments
+       WHERE id = $1`,
+      [fixture.paymentId]
+    );
+
+    assert.equal(paymentResult.rowCount, 1);
+
+    const payment = paymentResult.rows[0];
+
+    assert.equal(payment.status, "review_required");
+    assert.equal(payment.manual_review_required, true);
+    assert.equal(payment.processing_claim_token, null);
+    assert.equal(payment.paid_at, null);
+
+    console.log("Second worker safely took over the stale claim: passed");
+    console.log("No duplicate confirmation was sent: passed");
+    console.log("First worker detected its lost claim: passed");
+    console.log("Payment remained unpaid and under review: passed");
+  } finally {
+    if (!confirmationReleased && releaseConfirmation) {
+      releaseConfirmation({ status: "PENDING" });
+    }
+
+    await Promise.allSettled(
+      [firstPromise, secondPromise].filter(Boolean)
+    );
+
+    if (fixture) {
+      const reviewEvents = await setupClient.query(
+        `SELECT COUNT(*)::INTEGER AS count
+         FROM payment_review_events
+         WHERE payment_id = $1`,
+        [fixture.paymentId]
+      );
+
+      if (reviewEvents.rows[0].count === 0) {
+        await setupClient.query(
+          "DELETE FROM students WHERE id = $1",
+          [fixture.studentId]
+        );
+      } else {
+        console.log(
+          "Test fixture retained because review events reference it"
+        );
+      }
+    }
+
+    setupClient.release();
+  }
+});

@@ -761,6 +761,12 @@ async function processRecurringPayment(paymentId, dependencies = {}) {
       paymentMethodId: payment.airwallex_payment_method_id,
     });
 
+    await assertRecurringPaymentClaim(
+      client,
+      paymentId,
+      claimToken
+    );
+
     return {
       status: "confirmation_submitted",
       paymentId,
