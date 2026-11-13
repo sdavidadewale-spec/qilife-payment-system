@@ -207,7 +207,7 @@ router.post("/checkout/:token/payment-intent", async (req, res) => {
           currency,
           status,
           airwallex_payment_id,
-          payment_consent_start_date,
+          TO_CHAR(payment_consent_start_date, 'YYYY-MM-DD') AS payment_consent_start_date,
           processing_started_at,
           (
             processing_started_at <= NOW() - INTERVAL '5 minutes'
