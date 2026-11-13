@@ -19,6 +19,21 @@ const {
   markRetryOperationSucceeded,
 } = require("../utils/payment-retry-status");
 
+const PAYMENT_INTENT_STATUS_EVENTS = [
+  "payment_intent.created",
+  "payment_intent.requires_payment_method",
+  "payment_intent.updated",
+  "payment_intent.requires_capture",
+  "payment_intent.requires_customer_action",
+  "payment_intent.pending",
+  "payment_intent.pending_review",
+  "payment_intent.cancelled",
+  "payment_intent.payment_failed",
+];
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Receive Airwallex webhook notifications.
 router.post("/", async (req, res) => {
   if (req.webhookSignatureValid !== true) {
@@ -42,6 +57,52 @@ router.post("/", async (req, res) => {
     return res.status(400).json({
       message: "Webhook event details are missing",
     });
+  }
+
+  const isSuccessfulPaymentEvent =
+    event.name === "payment_intent.succeeded";
+
+  const isPaymentIntentStatusEvent =
+    PAYMENT_INTENT_STATUS_EVENTS.includes(event.name);
+
+  if (isSuccessfulPaymentEvent || isPaymentIntentStatusEvent) {
+    const merchantOrderId = eventObject?.merchant_order_id;
+
+    // Leave missing IDs to the existing event validation below.
+    // Only reject a supplied, non-empty ID that is not a valid UUID.
+    if (
+      merchantOrderId !== undefined &&
+      merchantOrderId !== null &&
+      merchantOrderId !== "" &&
+      (
+        typeof merchantOrderId !== "string" ||
+        !UUID_PATTERN.test(merchantOrderId)
+      )
+    ) {
+      if (isSuccessfulPaymentEvent) {
+        console.error(
+          "Webhook processing error: successful PaymentIntent has an invalid merchant_order_id",
+          { eventId: event.id }
+        );
+
+        return res.status(500).json({
+          message: "Could not process webhook",
+        });
+      }
+
+      console.warn(
+        "Ignoring PaymentIntent status event with an invalid merchant_order_id",
+        {
+          eventId: event.id,
+          eventName: event.name,
+        }
+      );
+
+      return res.status(200).json({
+        received: true,
+        ignored: true,
+      });
+    }
   }
 
   let client;
@@ -758,19 +819,7 @@ router.post("/", async (req, res) => {
     }
 
     // Track other PaymentIntent status events.
-    const paymentIntentEvents = [
-      "payment_intent.created",
-      "payment_intent.requires_payment_method",
-      "payment_intent.updated",
-      "payment_intent.requires_capture",
-      "payment_intent.requires_customer_action",
-      "payment_intent.pending",
-      "payment_intent.pending_review",
-      "payment_intent.cancelled",
-      "payment_intent.payment_failed",
-    ];
-
-    if (paymentIntentEvents.includes(event.name)) {
+    if (PAYMENT_INTENT_STATUS_EVENTS.includes(event.name)) {
       if (!eventObject) {
         throw new Error("PaymentIntent event data is missing");
       }

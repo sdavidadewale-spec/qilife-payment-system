@@ -2,8 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const payment = {
-  id: "payment-test-001",
-  subscription_id: "subscription-test-001",
+  id: "11111111-1111-4111-8111-111111111111",
+  subscription_id: "22222222-2222-4222-8222-222222222222",
   amount: "2100.00",
   currency: "SGD",
   status: "pending",
@@ -118,8 +118,11 @@ const mockClient = {
   release() {},
 };
 
+let connectCalls = 0;
+
 const mockPool = {
   async connect() {
+    connectCalls += 1;
     return mockClient;
   },
 };
@@ -212,6 +215,55 @@ async function sendWebhook(event) {
 
   return { statusCode, responseBody };
 }
+
+test("a PaymentIntent status event with a malformed merchant order ID is ignored before database access", async () => {
+  const previousConnectCalls = connectCalls;
+
+  const result = await sendWebhook({
+    id: "event-malformed-status-test",
+    name: "payment_intent.updated",
+    data: {
+      object: {
+        id: "pi-unrelated-test",
+        merchant_order_id: "qi-webhook-probe-1794565884379",
+        status: "PENDING",
+        updated_at: "2026-11-13T10:00:00Z",
+      },
+    },
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.deepEqual(result.responseBody, {
+    received: true,
+    ignored: true,
+  });
+  assert.equal(connectCalls, previousConnectCalls);
+});
+
+test("a successful PaymentIntent with a malformed merchant order ID returns 500 before database access", async () => {
+  const previousConnectCalls = connectCalls;
+
+  const result = await sendWebhook({
+    id: "event-malformed-success-test",
+    name: "payment_intent.succeeded",
+    data: {
+      object: {
+        id: "pi-unmatched-success-test",
+        merchant_order_id: "qi-webhook-probe-1794565884379",
+        status: "SUCCEEDED",
+        amount: 2100,
+        currency: "SGD",
+        updated_at: "2026-11-13T10:00:00Z",
+      },
+    },
+  });
+
+  assert.equal(result.statusCode, 500);
+  assert.deepEqual(result.responseBody, {
+    message: "Could not process webhook",
+  });
+  assert.equal(connectCalls, previousConnectCalls);
+});
 
 test("an old PaymentIntent success is reviewed, then the current success is recorded as paid", async () => {
   const oldResult = await sendWebhook({
