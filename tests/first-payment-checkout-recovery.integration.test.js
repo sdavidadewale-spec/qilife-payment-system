@@ -48,9 +48,7 @@ const checkoutHandler = router.stack
     (layer) =>
       layer.route?.path === "/checkout/:token/payment-intent"
   )
-  .route.stack
-  .find((layer) => layer.method === "post")
-  .handle;
+  .route.stack.at(-1).handle;
 
 async function verifyTestDatabase() {
   const result = await pool.query(

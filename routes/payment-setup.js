@@ -1,6 +1,7 @@
 const express = require("express");
 const crypto = require("crypto");
 const router = express.Router();
+const { paymentSetupLimiter } = require("../middleware/rate-limiters");
 const pool = require("../db");
 const { isValidPaymentSchedule } = require("../utils/payment-schedule");
 const {
@@ -41,85 +42,8 @@ function getHostedFrontendUrl() {
   }
 }
 
-// Create or retrieve an Airwallex customer
-router.post("/customer", async (req, res) => {
-  if (!getHostedFrontendUrl()) {
-    return res.status(503).json({
-      message:
-        "Secure hosted checkout is not configured. Payment setup is unavailable.",
-    });
-  }
-
-  const { student_id } = req.body;
-
-  if (!student_id) {
-    return res.status(400).json({
-      message: "Student ID is required",
-    });
-  }
-
-  try {
-    const studentResult = await pool.query(
-      `SELECT id, full_name, email, phone, airwallex_customer_id
-       FROM students
-       WHERE id = $1`,
-      [student_id]
-    );
-
-    if (studentResult.rows.length === 0) {
-      return res.status(404).json({
-        message: "Student not found",
-      });
-    }
-
-    const student = studentResult.rows[0];
-
-    if (student.airwallex_customer_id) {
-      return res.json({
-        message: "Airwallex customer already exists",
-        airwallex_customer_id: student.airwallex_customer_id,
-      });
-    }
-
-    const customer = await createAirwallexCustomer(student);
-
-    if (!customer.id) {
-      throw new Error("Airwallex did not return a customer ID");
-    }
-
-    const savedCustomer = await pool.query(
-      `UPDATE students
-       SET airwallex_customer_id = $1
-       WHERE id = $2
-         AND (
-           airwallex_customer_id IS NULL
-           OR airwallex_customer_id = $1
-         )
-       RETURNING airwallex_customer_id`,
-      [customer.id, student.id]
-    );
-
-    if (savedCustomer.rowCount !== 1) {
-      throw new Error(
-        "Airwallex customer ID could not be saved safely"
-      );
-    }
-
-    return res.status(201).json({
-      message: "Airwallex customer created successfully",
-      airwallex_customer_id: customer.id,
-    });
-  } catch (error) {
-    console.error("Payment setup error:", error.message);
-
-    return res.status(500).json({
-      message: "Could not set up Airwallex customer",
-    });
-  }
-});
-
 // Create or recover the first instalment PaymentIntent
-router.post("/checkout/:token/payment-intent", async (req, res) => {
+router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, res) => {
   // Stop before database or Airwallex calls if hosting is not configured.
   const hostedFrontendUrl = getHostedFrontendUrl();
 

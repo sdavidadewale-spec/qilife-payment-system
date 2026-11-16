@@ -32,9 +32,7 @@ if (originalDb) {
 
 const enrollHandler = router.stack
   .find((layer) => layer.route?.path === "/:slug/enroll")
-  .route.stack
-  .find((layer) => layer.method === "post")
-  .handle;
+  .route.stack.at(-1).handle;
 
 async function sendEnrollment(frontendUrl) {
   if (frontendUrl === undefined) {

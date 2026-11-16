@@ -1,6 +1,9 @@
 require("dotenv").config();
 
 const pool = require("../db");
+const { processRecurringPayment } = require("./recurring-payment-processor");
+
+const ADVISORY_LOCK_KEY = "731942681205";
 
 function getSingaporeDate() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -17,20 +20,8 @@ function getSingaporeDate() {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-async function runDryCheck({
-  database = pool,
-  logger = console,
-  dateProvider = getSingaporeDate,
-} = {}) {
-  const client = await database.connect();
-
-  try {
-    const singaporeDate = dateProvider();
-
-    logger.log("Recurring payment worker: DRY RUN");
-    logger.log("Singapore date:", singaporeDate);
-
-    const result = await client.query(
+async function getEligiblePayments(client, singaporeDate) {
+  const result = await client.query(
       `SELECT
          p.id AS payment_id,
          p.subscription_id,
@@ -180,14 +171,32 @@ async function runDryCheck({
        ORDER BY
          COALESCE(p.next_retry_at, p.due_date::timestamptz) ASC,
          p.instalment_number ASC
-
+       LIMIT 25
        `,
-      [singaporeDate]
-    );
+    [singaporeDate]
+  );
 
-    logger.log("Eligible instalments found:", result.rows.length);
+  return result.rows;
+}
 
-    for (const payment of result.rows) {
+async function runDryCheck({
+  database = pool,
+  logger = console,
+  dateProvider = getSingaporeDate,
+} = {}) {
+  const client = await database.connect();
+
+  try {
+    const singaporeDate = dateProvider();
+
+    logger.log("Recurring payment worker: DRY RUN");
+    logger.log("Singapore date:", singaporeDate);
+
+    const rows = await getEligiblePayments(client, singaporeDate);
+
+    logger.log("Eligible instalments found:", rows.length);
+
+    for (const payment of rows) {
       logger.log({
         payment_id: payment.payment_id,
         subscription_id: payment.subscription_id,
@@ -207,23 +216,176 @@ async function runDryCheck({
     }
 
     logger.log("Dry-run check completed.");
+
+    return {
+      status: "dry_run",
+      eligible: rows.length,
+    };
   } finally {
     client.release();
   }
 }
 
+function isLiveProcessingEnabled(environment = process.env) {
+  return (
+    environment.NODE_ENV === "production" &&
+    environment.RECURRING_PAYMENTS_ENABLED === "true"
+  );
+}
+
+async function runLiveWorker({
+  database = pool,
+  logger = console,
+  dateProvider = getSingaporeDate,
+  environment = process.env,
+  paymentProcessor = processRecurringPayment,
+  advisoryLockKey = ADVISORY_LOCK_KEY,
+} = {}) {
+  if (!isLiveProcessingEnabled(environment)) {
+    logger.log(
+      "LIVE PROCESSING BLOCKED: production mode and explicit enable setting are required."
+    );
+
+    return { status: "disabled", processed: 0 };
+  }
+
+  const lockClient = await database.connect();
+  let lockAcquisitionAttempted = false;
+  let lockStateKnown = false;
+  let lockAcquired = false;
+
+  try {
+    lockAcquisitionAttempted = true;
+
+    const lockResult = await lockClient.query(
+      "SELECT pg_try_advisory_lock($1::bigint) AS acquired",
+      [advisoryLockKey]
+    );
+
+    const acquired = lockResult.rows?.[0]?.acquired;
+
+    if (acquired !== true && acquired !== false) {
+      throw new Error("PostgreSQL returned an unknown advisory lock result");
+    }
+
+    lockStateKnown = true;
+    lockAcquired = acquired;
+
+    if (!lockAcquired) {
+      logger.log("Recurring payment worker is already running. This run will stop.");
+
+      return { status: "locked", processed: 0 };
+    }
+
+    const singaporeDate = dateProvider();
+
+    logger.log("Recurring payment worker: LIVE PROCESSING ENABLED");
+    logger.log("Singapore date:", singaporeDate);
+
+    const rows = await getEligiblePayments(lockClient, singaporeDate);
+
+    logger.log("Eligible instalments found:", rows.length);
+
+    const results = [];
+
+    for (const payment of rows) {
+      try {
+        const result = await paymentProcessor(payment.payment_id, {
+          db: database,
+        });
+
+        const item = {
+          payment_id: payment.payment_id,
+          status: result?.status || "unknown",
+        };
+
+        results.push(item);
+        logger.log("Recurring payment result:", item);
+      } catch (error) {
+        const item = {
+          payment_id: payment.payment_id,
+          status: "error",
+        };
+
+        results.push(item);
+
+        const logError = logger.error || logger.log;
+        logError.call(
+          logger,
+          "Recurring payment processing failed:",
+          payment.payment_id,
+          error.message
+        );
+      }
+    }
+
+    logger.log("Live worker run completed.", {
+      eligible: rows.length,
+      processed: results.length,
+      errors: results.filter((item) => item.status === "error").length,
+    });
+
+    return {
+      status: "completed",
+      eligible: rows.length,
+      processed: results.length,
+      results,
+    };
+  } finally {
+    let releaseError = null;
+
+    if (lockAcquisitionAttempted && !lockStateKnown) {
+      releaseError = new Error(
+        "Advisory lock acquisition outcome is unknown. Destroying the connection to prevent a retained session lock."
+      );
+
+      const logError = logger.error || logger.log;
+      logError.call(logger, releaseError.message);
+    }
+
+    if (lockAcquired) {
+      try {
+        const unlockResult = await lockClient.query(
+          "SELECT pg_advisory_unlock($1::bigint) AS released",
+          [advisoryLockKey]
+        );
+
+        if (unlockResult.rows?.[0]?.released !== true) {
+          throw new Error("PostgreSQL did not confirm advisory lock release");
+        }
+      } catch (error) {
+        releaseError = error;
+
+        const logError = logger.error || logger.log;
+        logError.call(
+          logger,
+          "Could not release recurring payment worker lock. Destroying its connection:",
+          error.message
+        );
+      }
+    }
+
+    lockClient.release(releaseError || undefined);
+  }
+}
 module.exports = {
   runDryCheck,
+  runLiveWorker,
+  isLiveProcessingEnabled,
+  getEligiblePayments,
   getSingaporeDate,
 };
 
 if (require.main === module) {
-  runDryCheck()
+  const liveRequested = process.argv.includes("--live");
+  const workerRun = liveRequested ? runLiveWorker() : runDryCheck();
+
+  workerRun
     .catch((error) => {
       console.error("Recurring payment check failed:", error.message);
       process.exitCode = 1;
     })
     .finally(async () => {
-      pool.end();
+      await pool.end();
     });
 }

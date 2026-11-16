@@ -1,5 +1,9 @@
 const express = require("express");
 const router = express.Router();
+const {
+  publicPlanLookupLimiter,
+  publicEnrollmentLimiter,
+} = require("../middleware/rate-limiters");
 const pool = require("../db");
 const crypto = require("crypto");
 const { isValidPaymentSchedule } = require("../utils/payment-schedule");
@@ -38,7 +42,7 @@ function buildInstallmentConsentText() {
 }
 
 // Get details for a reusable public checkout link
-router.get("/:slug", async (req, res) => {
+router.get("/:slug", publicPlanLookupLimiter, async (req, res) => {
   try {
     const { slug } = req.params;
 
@@ -108,7 +112,7 @@ router.get("/:slug", async (req, res) => {
 });
 
 // Create a separate student enrolment from a reusable link
-router.post("/:slug/enroll", async (req, res) => {
+router.post("/:slug/enroll", publicEnrollmentLimiter, async (req, res) => {
   const fullName =
     typeof req.body.full_name === "string"
       ? req.body.full_name.trim()

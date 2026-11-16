@@ -1,10 +1,11 @@
 const express = require("express");
 const router = express.Router();
+const { enrollmentStatusLimiter } = require("../middleware/rate-limiters");
 const pool = require("../db");
 const crypto = require("crypto");
 
 // Get checkout details using the secure token
-router.get("/checkout/:token", async (req, res) => {
+router.get("/checkout/:token", enrollmentStatusLimiter, async (req, res) => {
   try {
     const { token } = req.params;
 
