@@ -558,6 +558,9 @@
       if (!cardElement) {
         cardElement =
           await window.AirwallexComponentsSDK.createElement("card", {
+            intent_id: setupData.payment_intent_id,
+            client_secret: setupData.client_secret,
+            currency: setupData.currency,
             autoCapture: true
           });
 
