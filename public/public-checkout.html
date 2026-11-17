@@ -581,8 +581,13 @@
           const detail = (event && event.detail) || {};
           console.log("AWX change", JSON.stringify(detail));
 
+          const completed =
+            detail.completed === true || detail.complete === true;
+          const hasValidationError = Boolean(detail.error);
+
           cardReady = true;
-          payButton.disabled = !detail.completed || isPaying;
+          payButton.disabled =
+            !(completed && !hasValidationError) || isPaying;
         });
 
         cardElement.on("focus", e => {
