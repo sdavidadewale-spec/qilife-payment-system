@@ -548,7 +548,7 @@
 
       if (!sdkInitialized) {
         await window.AirwallexComponentsSDK.init({
-          env: "demo",
+          env: "prod",
           enabledElements: ["payments"]
         });
 
@@ -558,23 +558,31 @@
       if (!cardElement) {
         cardElement =
           await window.AirwallexComponentsSDK.createElement("card", {
-            intent_id: setupData.payment_intent_id,
-            client_secret: setupData.client_secret,
-            currency: setupData.currency,
             autoCapture: true
           });
 
         if (!cardElement) {
           throw new Error("Could not create the secure card form.");
         }
+      }
+
+      if (!cardMounted) {
+        let cardCompleted = false;
 
         cardElement.on("ready", () => {
+          console.log("Airwallex card element is ready.");
+
           cardReady = true;
-          setPaymentStatus("Enter your card details to continue.");
+          payButton.disabled = !cardCompleted || isPaying;
+
+          setPaymentStatus(
+            "Enter your card details to continue."
+          );
         });
 
         cardElement.on("change", event => {
-          const detail = event && event.detail ? event.detail : {};
+          const detail =
+            event && event.detail ? event.detail : {};
 
           console.log("Airwallex card change:", {
             completed: detail.completed,
@@ -583,13 +591,16 @@
             errorMessage: detail.error && detail.error.message
           });
 
-          const completed = Boolean(detail.completed);
+          cardCompleted = detail.completed === true;
 
-          payButton.disabled = !cardReady || !completed || isPaying;
+          payButton.disabled =
+            !cardReady || !cardCompleted || isPaying;
         });
-      }
 
-      if (!cardMounted) {
+        cardElement.on("ready", e => console.log("AWX ready", e));
+        cardElement.on("change", e => console.log("AWX change", JSON.stringify(e.detail)));
+        cardElement.on("focus",  e => console.log("AWX focus", JSON.stringify(e.detail)));
+
         cardElement.mount("card-container");
         cardMounted = true;
       }
