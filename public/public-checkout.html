@@ -585,13 +585,15 @@
             event && event.detail ? event.detail : {};
 
           console.log("Airwallex card change:", {
+            complete: detail.complete,
             completed: detail.completed,
             empty: detail.empty,
             errorCode: detail.error && detail.error.code,
             errorMessage: detail.error && detail.error.message
           });
 
-          cardCompleted = detail.completed === true;
+          cardCompleted =
+            detail.complete === true || detail.completed === true;
 
           payButton.disabled =
             !cardReady || !cardCompleted || isPaying;
@@ -874,7 +876,7 @@
 
       } catch (error) {
         isPaying = false;
-        payButton.disabled = false;
+        payButton.disabled = !cardReady || !cardCompleted;
         payButton.textContent = "Pay First Instalment";
 
         setPaymentStatus(
