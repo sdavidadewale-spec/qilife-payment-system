@@ -564,28 +564,30 @@
         if (!cardElement) {
           throw new Error("Could not create the secure card form.");
         }
-
-        cardElement.on("ready", () => {
-          cardReady = true;
-          setPaymentStatus("Enter your card details to continue.");
-        });
-
-        cardElement.on("change", event => {
-          const completed = Boolean(
-            event && event.detail && event.detail.completed
-          );
-
-          payButton.disabled = !cardReady || !completed || isPaying;
-        });
-
-        cardElement.on("ready", e => console.log("AWX ready", e));
-        cardElement.on("change", e => console.log("AWX change", JSON.stringify(e.detail)));
-        cardElement.on("focus",  e => console.log("AWX focus", JSON.stringify(e.detail)));
       }
 
       if (!cardMounted) {
         cardElement.mount("card-container");
         cardMounted = true;
+
+        // Attach handlers after mount, once
+        cardElement.on("ready", () => {
+          console.log("AWX ready");
+          cardReady = true;
+          setPaymentStatus("Enter your card details to continue.");
+        });
+
+        cardElement.on("change", event => {
+          const detail = (event && event.detail) || {};
+          console.log("AWX change", JSON.stringify(detail));
+
+          cardReady = true;
+          payButton.disabled = !detail.completed || isPaying;
+        });
+
+        cardElement.on("focus", e => {
+          console.log("AWX focus", JSON.stringify(e.detail));
+        });
       }
     }
 
