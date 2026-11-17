@@ -577,6 +577,10 @@
 
           payButton.disabled = !cardReady || !completed || isPaying;
         });
+
+        cardElement.on("ready", e => console.log("AWX ready", e));
+        cardElement.on("change", e => console.log("AWX change", JSON.stringify(e.detail)));
+        cardElement.on("focus",  e => console.log("AWX focus", JSON.stringify(e.detail)));
       }
 
       if (!cardMounted) {
