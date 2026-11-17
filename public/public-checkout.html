@@ -581,13 +581,11 @@
           const detail = (event && event.detail) || {};
           console.log("AWX change", JSON.stringify(detail));
 
-          const completed =
-            detail.completed === true || detail.complete === true;
-          const hasValidationError = Boolean(detail.error);
+          const isComplete =
+            detail.complete === true || detail.completed === true;
 
-          cardReady = true;
-          payButton.disabled =
-            !(completed && !hasValidationError) || isPaying;
+          cardReady = isComplete;
+          payButton.disabled = !cardReady || isPaying;
         });
 
         cardElement.on("focus", e => {
@@ -864,7 +862,7 @@
 
       } catch (error) {
         isPaying = false;
-        payButton.disabled = false;
+        payButton.disabled = !cardReady;
         payButton.textContent = "Pay First Instalment";
 
         setPaymentStatus(
