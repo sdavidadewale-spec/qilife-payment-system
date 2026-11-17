@@ -377,6 +377,7 @@
     let cardElement = null;
     let cardMounted = false;
     let cardReady = false;
+    let cardCompleted = false;
     let sdkInitialized = false;
     let currentPaymentSetup = null;
 
@@ -567,7 +568,8 @@
       }
 
       if (!cardMounted) {
-        let cardCompleted = false;
+        cardElement.mount("card-container");
+        cardMounted = true;
 
         cardElement.on("ready", () => {
           console.log("Airwallex card element is ready.");
@@ -602,9 +604,6 @@
         cardElement.on("ready", e => console.log("AWX ready", e));
         cardElement.on("change", e => console.log("AWX change", JSON.stringify(e.detail)));
         cardElement.on("focus",  e => console.log("AWX focus", JSON.stringify(e.detail)));
-
-        cardElement.mount("card-container");
-        cardMounted = true;
       }
     }
 
