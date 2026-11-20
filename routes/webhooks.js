@@ -36,6 +36,13 @@ const PAYMENT_INTENT_STATUS_EVENTS = [
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+class UnmatchedWebhookEventError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "UnmatchedWebhookEventError";
+  }
+}
+
 // Receive Airwallex webhook notifications.
 router.post("/", async (req, res) => {
   if (req.webhookSignatureValid !== true) {
@@ -223,7 +230,7 @@ router.post("/", async (req, res) => {
       );
 
       if (paymentResult.rows.length !== 1) {
-        throw new Error(
+        throw new UnmatchedWebhookEventError(
           "Payment for this PaymentAttempt was not found. Airwallex should retry this event."
         );
       }
@@ -568,7 +575,7 @@ router.post("/", async (req, res) => {
       );
 
       if (paymentResult.rows.length !== 1) {
-        throw new Error(
+        throw new UnmatchedWebhookEventError(
           "Matching PaymentIntent was not found. Airwallex should retry this event."
         );
       }
@@ -871,7 +878,7 @@ router.post("/", async (req, res) => {
         );
 
         if (existingIntent.rowCount === 0) {
-          throw new Error(
+          throw new UnmatchedWebhookEventError(
             "Matching PaymentIntent was not found. Airwallex should retry this event."
           );
         }
@@ -952,7 +959,7 @@ router.post("/", async (req, res) => {
       );
 
       if (consentResult.rowCount === 0) {
-        throw new Error(
+        throw new UnmatchedWebhookEventError(
           "Matching subscription for payment consent was not found. Airwallex should retry this event."
         );
       }
@@ -972,9 +979,71 @@ router.post("/", async (req, res) => {
       } catch (rollbackError) {
         console.error("Webhook rollback error:", rollbackError.message);
       }
+
+      client.release();
+      client = null;
     }
 
     console.error("Webhook processing error:", error.message);
+
+    if (error instanceof UnmatchedWebhookEventError) {
+      try {
+        const savedEvent = await pool.query(
+          `INSERT INTO unresolved_webhook_events (
+             event_id,
+             event_type,
+             payload,
+             reason
+           )
+           VALUES ($1, $2, $3::jsonb, $4)
+           ON CONFLICT (event_id)
+           DO UPDATE SET
+             received_count = unresolved_webhook_events.received_count + 1,
+             last_received_at = NOW(),
+             reason = EXCLUDED.reason,
+             payload = EXCLUDED.payload
+           WHERE unresolved_webhook_events.resolution_status = 'pending'
+           RETURNING event_id`,
+          [
+            event.id,
+            event.name,
+            JSON.stringify(event),
+            error.message,
+          ]
+        );
+
+        if (savedEvent.rowCount === 1) {
+          return res.status(200).json({
+            received: true,
+            unresolved: true,
+          });
+        }
+
+        const existingEvent = await pool.query(
+          `SELECT event_id
+           FROM unresolved_webhook_events
+           WHERE event_id = $1`,
+          [event.id]
+        );
+
+        if (existingEvent.rowCount === 1) {
+          return res.status(200).json({
+            received: true,
+            unresolved: true,
+            already_recorded: true,
+          });
+        }
+
+        throw new Error(
+          "Unmatched webhook event could not be confirmed in storage."
+        );
+      } catch (storageError) {
+        console.error(
+          "Unresolved webhook storage error:",
+          storageError.message
+        );
+      }
+    }
 
     return res.status(500).json({
       message: "Could not process webhook",
