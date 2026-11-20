@@ -1,7 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { addMonthsClamped } = require("../utils/payment-dates");
+const {
+  getMonthlyInstalmentDueDate,
+} = require("../utils/payment-dates");
 const {
   retrieveAirwallexPaymentConsent,
 } = require("../airwallex");
@@ -744,30 +746,27 @@ router.post("/", async (req, res) => {
         }
       }
 
-      // Get the first payment date in Singapore time.
-      const paidDateResult = await client.query(
+      // Get the saved checkout date for the instalment schedule.
+      const checkoutDateResult = await client.query(
         `SELECT
-           to_char(
-             paid_at AT TIME ZONE 'Asia/Singapore',
-             'YYYY-MM-DD'
-           ) AS paid_date_singapore,
+           TO_CHAR(payment_consent_start_date, 'YYYY-MM-DD') AS checkout_date,
            instalment_number
          FROM payments
          WHERE id = $1`,
         [payment.id]
       );
 
-      if (paidDateResult.rows.length === 0) {
+      if (checkoutDateResult.rows.length === 0) {
         throw new Error("Paid instalment record was not found");
       }
 
       // Set monthly due dates after the first payment succeeds.
-      if (Number(paidDateResult.rows[0].instalment_number) === 1) {
-        const firstPaidDate =
-          paidDateResult.rows[0].paid_date_singapore;
+      if (Number(checkoutDateResult.rows[0].instalment_number) === 1) {
+        const checkoutDate =
+          checkoutDateResult.rows[0].checkout_date;
 
-        if (!firstPaidDate) {
-          throw new Error("First payment date is missing");
+        if (!checkoutDate) {
+          throw new Error("Saved checkout date is missing");
         }
 
         const scheduleResult = await client.query(
@@ -780,9 +779,9 @@ router.post("/", async (req, res) => {
         );
 
         for (const instalment of scheduleResult.rows) {
-          const dueDate = addMonthsClamped(
-            firstPaidDate,
-            Number(instalment.instalment_number) - 1
+          const dueDate = getMonthlyInstalmentDueDate(
+            checkoutDate,
+            Number(instalment.instalment_number)
           );
 
           await client.query(

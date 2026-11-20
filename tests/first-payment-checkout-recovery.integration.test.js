@@ -13,6 +13,9 @@ const airwallex = require("../airwallex");
 
 const createCalls = [];
 let customerCreationCalls = 0;
+let delayedCreateCall = null;
+let delayedCreateStarted = null;
+let releaseDelayedCreateCall = null;
 
 airwallex.createAirwallexCustomer = async () => {
   customerCreationCalls += 1;
@@ -25,6 +28,22 @@ airwallex.retrieveAirwallexPaymentIntent = async () => {
 
 airwallex.createAirwallexPaymentIntent = async (request) => {
   createCalls.push(structuredClone(request));
+
+  if (delayedCreateCall === createCalls.length) {
+    delayedCreateStarted?.();
+
+    return new Promise((resolve) => {
+      releaseDelayedCreateCall = () => resolve({
+        id: `int_mock_${crypto.randomUUID()}`,
+        status: "REQUIRES_PAYMENT_METHOD",
+        merchant_order_id: request.merchantOrderId,
+        amount: Number(request.amount),
+        currency: request.currency,
+        updated_at: new Date().toISOString(),
+        client_secret: "mock_client_secret",
+      });
+    });
+  }
 
   if (createCalls.length === 1) {
     throw new Error("Simulated timeout after the request was sent");
@@ -407,6 +426,17 @@ test(
         recoveryRequest.paymentConsent.terms_of_use.payment_currency,
         "SGD"
       );
+      assert.deepEqual(
+        recoveryRequest.paymentConsent.terms_of_use.payment_schedule,
+        {
+          period: 1,
+          period_unit: "MONTH",
+        }
+      );
+      assert.equal(
+        recoveryRequest.paymentConsent.terms_of_use.billing_cycle_charge_day,
+        5
+      );
       assert.equal(
         Number(
           recoveryRequest.paymentConsent.terms_of_use.first_payment_amount
@@ -482,6 +512,121 @@ test(
         "REQUIRES_PAYMENT_METHOD"
       );
     } finally {
+      await cleanupFixture(fixture);
+    }
+  }
+);
+
+test(
+  "an older first-payment request cannot overwrite a newer recovery claim",
+  async () => {
+    createCalls.length = 0;
+    customerCreationCalls = 0;
+    delayedCreateCall = 1;
+    delayedCreateStarted = null;
+    releaseDelayedCreateCall = null;
+
+    const fixture = await createFixture();
+
+    let signalDelayedStart;
+    const delayedStarted = new Promise((resolve) => {
+      signalDelayedStart = resolve;
+    });
+
+    delayedCreateStarted = signalDelayedStart;
+
+    let olderRequestPromise;
+
+    try {
+      // Start the older request and hold its Airwallex response.
+      olderRequestPromise = sendCheckoutRequest(fixture.token);
+      await delayedStarted;
+
+      assert.equal(createCalls.length, 1);
+      assert.equal(typeof releaseDelayedCreateCall, "function");
+
+      // Make its processing claim eligible for recovery.
+      await pool.query(
+        `UPDATE payments
+         SET processing_started_at = NOW() - INTERVAL '6 minutes'
+         WHERE id = $1`,
+        [fixture.firstPaymentId]
+      );
+
+      // The recovery request claims the payment with a new token.
+      const recoveryResult = await sendCheckoutRequest(fixture.token);
+
+      assert.equal(recoveryResult.statusCode, 200);
+      assert.equal(
+        recoveryResult.responseBody.payment_intent_status,
+        "REQUIRES_PAYMENT_METHOD"
+      );
+
+      const recoveryIntentId =
+        recoveryResult.responseBody.payment_intent_id;
+
+      assert.ok(recoveryIntentId);
+      assert.equal(createCalls.length, 2);
+
+      // Now let the older request return a different PaymentIntent.
+      releaseDelayedCreateCall();
+
+      const olderResult = await olderRequestPromise;
+
+      assert.equal(olderResult.statusCode, 500);
+      assert.equal(
+        olderResult.responseBody.message,
+        "Could not prepare the first payment"
+      );
+
+      // The recovery PaymentIntent must remain saved.
+      const paymentResult = await pool.query(
+        `SELECT
+           status,
+           airwallex_payment_id,
+           last_error,
+           processing_claim_token
+         FROM payments
+         WHERE id = $1`,
+        [fixture.firstPaymentId]
+      );
+
+      assert.equal(paymentResult.rows.length, 1);
+      assert.equal(paymentResult.rows[0].status, "processing");
+      assert.equal(
+        paymentResult.rows[0].airwallex_payment_id,
+        recoveryIntentId
+      );
+      assert.equal(paymentResult.rows[0].last_error, null);
+      assert.ok(paymentResult.rows[0].processing_claim_token);
+
+      // Only the recovery PaymentIntent may appear in history.
+      const historyResult = await pool.query(
+        `SELECT airwallex_payment_intent_id
+         FROM airwallex_payment_intents
+         WHERE payment_id = $1`,
+        [fixture.firstPaymentId]
+      );
+
+      assert.equal(historyResult.rows.length, 1);
+      assert.equal(
+        historyResult.rows[0].airwallex_payment_intent_id,
+        recoveryIntentId
+      );
+    } finally {
+      // Do not leave a delayed request waiting if an assertion fails.
+      if (releaseDelayedCreateCall) {
+        releaseDelayedCreateCall();
+      }
+
+      if (olderRequestPromise) {
+        await olderRequestPromise.catch(() => {});
+      }
+
+      delayedCreateCall = null;
+      delayedCreateStarted = null;
+      releaseDelayedCreateCall = null;
+
       await cleanupFixture(fixture);
     }
   }

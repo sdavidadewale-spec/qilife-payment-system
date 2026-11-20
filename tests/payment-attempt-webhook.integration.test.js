@@ -54,7 +54,10 @@ async function sendWebhook(event) {
   return { statusCode, responseBody };
 }
 
-async function createFixture({ consentReady = true } = {}) {
+async function createFixture({
+  consentReady = true,
+  instalmentNumber = 2,
+} = {}) {
   const suffix = crypto.randomUUID();
   const fixture = {
     email: `payment-attempt-${suffix}@example.test`,
@@ -107,11 +110,12 @@ async function createFixture({ consentReady = true } = {}) {
          status,
          processing_started_at
        )
-       VALUES ($1, $2, 2, 2100, 'SGD', 'processing', NOW())
+       VALUES ($1, $2, $3, 2100, 'SGD', 'processing', NOW())
        RETURNING id`,
       [
         fixture.subscriptionId,
         fixture.paymentIntentId,
+        instalmentNumber,
       ]
     );
 
@@ -200,6 +204,95 @@ test.before(async () => {
 test.after(async () => {
   await pool.end();
 });
+
+test(
+  "a failed first instalment is recorded without scheduling a recurring retry",
+  async () => {
+    const fixture = await createFixture({
+      instalmentNumber: 1,
+    });
+
+    try {
+      const event = makeAttemptEvent(fixture, {
+        eventId: `event-first-instalment-${crypto.randomUUID()}`,
+      });
+
+      const result = await sendWebhook(event);
+
+      assert.equal(result.statusCode, 200);
+      assert.equal(result.responseBody.processed, true);
+
+      const paymentResult = await pool.query(
+        `SELECT
+           status,
+           payment_attempts,
+           next_retry_at,
+           manual_review_required,
+           manual_review_reason,
+           processing_started_at,
+           airwallex_payment_id
+         FROM payments
+         WHERE id = $1`,
+        [fixture.paymentId]
+      );
+
+      const payment = paymentResult.rows[0];
+
+      assert.equal(payment.status, "processing");
+      assert.equal(payment.payment_attempts, 0);
+      assert.equal(payment.next_retry_at, null);
+      assert.equal(payment.manual_review_required, false);
+      assert.equal(payment.manual_review_reason, null);
+      assert.ok(payment.processing_started_at);
+      assert.equal(
+        payment.airwallex_payment_id,
+        fixture.paymentIntentId
+      );
+
+      const attemptResult = await pool.query(
+        `SELECT
+           airwallex_payment_intent_id,
+           airwallex_payment_attempt_id,
+           status
+         FROM airwallex_payment_attempts
+         WHERE payment_id = $1`,
+        [fixture.paymentId]
+      );
+
+      assert.equal(attemptResult.rows.length, 1);
+      assert.equal(
+        attemptResult.rows[0].airwallex_payment_intent_id,
+        fixture.paymentIntentId
+      );
+      assert.equal(
+        attemptResult.rows[0].airwallex_payment_attempt_id,
+        fixture.paymentAttemptId
+      );
+      assert.equal(attemptResult.rows[0].status, "FAILED");
+
+      const intentResult = await pool.query(
+        `SELECT
+           airwallex_payment_intent_id,
+           status
+         FROM airwallex_payment_intents
+         WHERE payment_id = $1`,
+        [fixture.paymentId]
+      );
+
+      assert.equal(intentResult.rows.length, 1);
+      assert.equal(
+        intentResult.rows[0].airwallex_payment_intent_id,
+        fixture.paymentIntentId
+      );
+      assert.equal(
+        intentResult.rows[0].status,
+        "REQUIRES_PAYMENT_METHOD"
+      );
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  }
+);
 
 test(
   "retryable failure is recorded once and older updates cannot replace it",

@@ -55,6 +55,7 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
   }
 
   let payment;
+  let processingClaimToken = null;
 
   try {
     const { token } = req.params;
@@ -176,6 +177,7 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
         await client.query("ROLLBACK");
 
         return res.status(409).json({
+          code: "PAYMENT_SETUP_IN_PROGRESS",
           message:
             "Payment setup is already in progress. Please try again shortly.",
         });
@@ -220,15 +222,19 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
         : todayInSingapore;
 
       // Claim the payment before contacting Airwallex.
+      // A later recovery attempt receives a different token.
+      processingClaimToken = crypto.randomUUID();
+
       await client.query(
         `UPDATE payments
          SET status = 'processing',
              processing_started_at = NOW(),
+             processing_claim_token = $3,
              payment_consent_start_date =
                COALESCE(payment_consent_start_date, $2),
              last_error = NULL
          WHERE id = $1`,
-        [payment.id, startDate]
+        [payment.id, startDate, processingClaimToken]
       );
 
       await client.query("COMMIT");
@@ -289,6 +295,11 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
       terms_of_use: {
         payment_amount_type: "VARIABLE",
         payment_currency: payment.currency,
+        payment_schedule: {
+          period: 1,
+          period_unit: "MONTH",
+        },
+        billing_cycle_charge_day: 5,
         start_date: startDate,
         first_payment_amount: Number(payment.amount),
         max_payment_amount: maxPaymentAmount,
@@ -334,12 +345,14 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
          SET airwallex_payment_id = $1,
              last_error = NULL
          WHERE id = $2
+           AND status = 'processing'
+           AND processing_claim_token = $3
            AND (
              airwallex_payment_id IS NULL
              OR airwallex_payment_id = $1
            )
          RETURNING id`,
-        [intent.id, payment.id]
+        [intent.id, payment.id, processingClaimToken]
       );
 
       if (saveResult.rowCount !== 1) {
@@ -393,6 +406,7 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
     // A completed payment must be handled by the webhook.
     if (intent.status === "SUCCEEDED") {
       return res.status(409).json({
+        code: "PAYMENT_ALREADY_COMPLETED",
         message:
           "This payment has already completed. Please refresh.",
       });
@@ -440,10 +454,12 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
           `UPDATE payments
            SET last_error = $1
            WHERE id = $2
-             AND status = 'processing'`,
+             AND status = 'processing'
+             AND processing_claim_token = $3`,
           [
             String(error.message).slice(0, 1000),
             payment.id,
+            processingClaimToken,
           ]
         );
       } catch (saveError) {

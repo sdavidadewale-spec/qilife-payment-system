@@ -97,12 +97,12 @@ const mockClient = {
 
     if (
       query.includes("SELECT") &&
-      query.includes("paid_at AT TIME ZONE 'Asia/Singapore'")
+      query.includes("payment_consent_start_date")
     ) {
       return {
         rowCount: 1,
         rows: [{
-          paid_date_singapore: "2026-11-10",
+          checkout_date: "2026-11-04",
           instalment_number: 2,
         }],
       };

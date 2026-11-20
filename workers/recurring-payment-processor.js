@@ -173,13 +173,14 @@ async function savePaymentIntent(
              status = 'intent_created',
              updated_at = NOW()
          WHERE id = $1
+           AND payment_id = $3
            AND status IN ('prepared', 'intent_created')
            AND (
              airwallex_payment_intent_id IS NULL
              OR airwallex_payment_intent_id = $2
            )
          RETURNING id`,
-        [retryOperation.id, intent.id]
+        [retryOperation.id, intent.id, payment.id]
       );
 
       if (retryUpdate.rowCount !== 1) {
@@ -760,12 +761,6 @@ async function processRecurringPayment(paymentId, dependencies = {}) {
       paymentConsentId: payment.airwallex_payment_consent_id,
       paymentMethodId: payment.airwallex_payment_method_id,
     });
-
-    await assertRecurringPaymentClaim(
-      client,
-      paymentId,
-      claimToken
-    );
 
     return {
       status: "confirmation_submitted",

@@ -601,9 +601,6 @@
             !cardReady || !cardCompleted || isPaying;
         });
 
-        cardElement.on("ready", e => console.log("AWX ready", e));
-        cardElement.on("change", e => console.log("AWX change", JSON.stringify(e.detail)));
-        cardElement.on("focus",  e => console.log("AWX focus", JSON.stringify(e.detail)));
       }
     }
 
@@ -637,7 +634,25 @@
         const setupData = await response.json().catch(() => ({}));
 
         if (response.status === 409) {
-          await waitForPaymentConfirmation(checkoutToken);
+          if (setupData.code === "PAYMENT_ALREADY_COMPLETED") {
+            await waitForPaymentConfirmation(checkoutToken);
+            return;
+          }
+
+          if (setupData.code === "PAYMENT_SETUP_IN_PROGRESS") {
+            setPaymentStatus(
+              setupData.message ||
+              "Payment setup is still in progress. Please wait before trying again."
+            );
+            retrySetupButton.classList.remove("hidden");
+            return;
+          }
+
+          setPaymentStatus(
+            setupData.message ||
+            "Payment setup could not continue. Please contact QiLife support.",
+            "error"
+          );
           return;
         }
 

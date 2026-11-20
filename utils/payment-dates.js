@@ -1,24 +1,40 @@
-function addMonthsClamped(dateString, monthsToAdd) {
-  const [year, month, day] = dateString.split("-").map(Number);
+function getMonthlyInstalmentDueDate(checkoutDate, instalmentNumber) {
+  if (!Number.isInteger(instalmentNumber) || instalmentNumber < 2) {
+    throw new Error("Instalment number must be at least 2");
+  }
 
-  const targetDate = new Date(
-    Date.UTC(year, month - 1 + monthsToAdd, 1)
-  );
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(checkoutDate)) {
+    throw new Error("A valid checkout date is required");
+  }
 
-  const targetYear = targetDate.getUTCFullYear();
-  const targetMonth = targetDate.getUTCMonth();
+  const [year, month, day] = checkoutDate.split("-").map(Number);
+  const firstDate = new Date(Date.UTC(year, month - 1, day));
 
-  const lastDay = new Date(
-    Date.UTC(targetYear, targetMonth + 1, 0)
-  ).getUTCDate();
+  if (
+    firstDate.getUTCFullYear() !== year ||
+    firstDate.getUTCMonth() !== month - 1 ||
+    firstDate.getUTCDate() !== day
+  ) {
+    throw new Error("A valid checkout date is required");
+  }
 
-  const finalDay = Math.min(day, lastDay);
+  let dueMonth = month - 1;
+
+  if (day >= 5) {
+    dueMonth += 1;
+  }
+
+  dueMonth += instalmentNumber - 2;
+
+  const dueDate = new Date(Date.UTC(year, dueMonth, 5));
 
   return [
-    targetYear,
-    String(targetMonth + 1).padStart(2, "0"),
-    String(finalDay).padStart(2, "0"),
+    dueDate.getUTCFullYear(),
+    String(dueDate.getUTCMonth() + 1).padStart(2, "0"),
+    "05",
   ].join("-");
 }
 
-module.exports = { addMonthsClamped };
+module.exports = {
+  getMonthlyInstalmentDueDate,
+};
