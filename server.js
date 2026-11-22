@@ -65,10 +65,6 @@ app.get("/", (req, res) => {
   });
 });
 
-// Open the checkout page using its secure token
-app.get("/checkout/:token", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "checkout.html"));
-});
 
 
 if (require.main === module) {

@@ -237,7 +237,7 @@ test("rejects a test event with an invalid signature before database access", as
   assert.equal(savedEvents.length, previousSavedEvents);
 });
 
-test("sets no-referrer policy on the public checkout page only", async () => {
+test("sets no-referrer policy on the public checkout page and blocks the old checkout page", async () => {
   const checkoutResponse = await fetch(`${baseUrl}/public-checkout.html`);
   const otherPageResponse = await fetch(`${baseUrl}/checkout.html`);
 
@@ -247,6 +247,6 @@ test("sets no-referrer policy on the public checkout page only", async () => {
     "no-referrer"
   );
 
-  assert.equal(otherPageResponse.status, 200);
+  assert.equal(otherPageResponse.status, 404);
   assert.equal(otherPageResponse.headers.get("referrer-policy"), null);
 });
