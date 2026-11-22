@@ -176,6 +176,7 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
         await client.query("ROLLBACK");
 
         return res.status(409).json({
+          code: "PAYMENT_SETUP_IN_PROGRESS",
           message:
             "Payment setup is already in progress. Please try again shortly.",
         });
@@ -289,6 +290,11 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
       terms_of_use: {
         payment_amount_type: "VARIABLE",
         payment_currency: payment.currency,
+        payment_schedule: {
+          period: 1,
+          period_unit: "MONTH",
+        },
+        billing_cycle_charge_day: 5,
         start_date: startDate,
         first_payment_amount: Number(payment.amount),
         max_payment_amount: maxPaymentAmount,
@@ -393,6 +399,7 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
     // A completed payment must be handled by the webhook.
     if (intent.status === "SUCCEEDED") {
       return res.status(409).json({
+        code: "PAYMENT_ALREADY_COMPLETED",
         message:
           "This payment has already completed. Please refresh.",
       });

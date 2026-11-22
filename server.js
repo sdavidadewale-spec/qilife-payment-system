@@ -70,6 +70,7 @@ app.get("/checkout/:token", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "checkout.html"));
 });
 
+
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
 

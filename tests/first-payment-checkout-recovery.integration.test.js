@@ -407,6 +407,17 @@ test(
         recoveryRequest.paymentConsent.terms_of_use.payment_currency,
         "SGD"
       );
+      assert.deepEqual(
+        recoveryRequest.paymentConsent.terms_of_use.payment_schedule,
+        {
+          period: 1,
+          period_unit: "MONTH",
+        }
+      );
+      assert.equal(
+        recoveryRequest.paymentConsent.terms_of_use.billing_cycle_charge_day,
+        5
+      );
       assert.equal(
         Number(
           recoveryRequest.paymentConsent.terms_of_use.first_payment_amount

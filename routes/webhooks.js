@@ -1,7 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-const { addMonthsClamped } = require("../utils/payment-dates");
+const {
+  getMonthlyInstalmentDueDate,
+} = require("../utils/payment-dates");
 const {
   retrieveAirwallexPaymentConsent,
 } = require("../airwallex");
@@ -744,10 +746,10 @@ router.post("/", async (req, res) => {
         }
       }
 
-      // Get the first payment date in Singapore time.
+      // Get the first successful payment date in Singapore time.
       const paidDateResult = await client.query(
         `SELECT
-           to_char(
+           TO_CHAR(
              paid_at AT TIME ZONE 'Asia/Singapore',
              'YYYY-MM-DD'
            ) AS paid_date_singapore,
@@ -780,9 +782,9 @@ router.post("/", async (req, res) => {
         );
 
         for (const instalment of scheduleResult.rows) {
-          const dueDate = addMonthsClamped(
+          const dueDate = getMonthlyInstalmentDueDate(
             firstPaidDate,
-            Number(instalment.instalment_number) - 1
+            Number(instalment.instalment_number)
           );
 
           await client.query(

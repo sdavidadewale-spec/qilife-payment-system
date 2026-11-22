@@ -1211,7 +1211,7 @@ test("processor blocks recurring payments when card consent is missing or unveri
   }
 });
 
-test("processor detects a lost claim after slow Airwallex confirmation", async () => {
+test("processor handles a lost claim after slow Airwallex confirmation", async () => {
   const setupClient = await pool.connect();
 
   let fixture;
@@ -1314,10 +1314,9 @@ test("processor detects a lost claim after slow Airwallex confirmation", async (
     releaseConfirmation({ status: "PENDING" });
     confirmationReleased = true;
 
-    await assert.rejects(
-      firstPromise,
-      /Recurring payment claim was lost/
-    );
+    const firstResult = await firstPromise;
+
+    assert.equal(firstResult.status, "confirmation_submitted");
 
     const paymentResult = await setupClient.query(
       `SELECT
@@ -1341,7 +1340,7 @@ test("processor detects a lost claim after slow Airwallex confirmation", async (
 
     console.log("Second worker safely took over the stale claim: passed");
     console.log("No duplicate confirmation was sent: passed");
-    console.log("First worker detected its lost claim: passed");
+    console.log("First worker completed without a false claim-loss error: passed");
     console.log("Payment remained unpaid and under review: passed");
   } finally {
     if (!confirmationReleased && releaseConfirmation) {

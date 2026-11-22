@@ -377,6 +377,7 @@
     let cardElement = null;
     let cardMounted = false;
     let cardReady = false;
+    let cardCompleted = false;
     let sdkInitialized = false;
     let currentPaymentSetup = null;
 
@@ -574,6 +575,7 @@
         cardElement.on("ready", () => {
           console.log("AWX ready");
           cardReady = true;
+          payButton.disabled = !cardCompleted || isPaying;
           setPaymentStatus("Enter your card details to continue.");
         });
 
@@ -581,8 +583,8 @@
           const detail = (event && event.detail) || {};
           console.log("AWX change", JSON.stringify(detail));
 
-          cardReady = true;
-          payButton.disabled = !detail.completed || isPaying;
+          cardCompleted = detail.complete === true || detail.completed === true;
+          payButton.disabled = !cardReady || !cardCompleted || isPaying;
         });
 
         cardElement.on("focus", e => {
@@ -621,7 +623,23 @@
         const setupData = await response.json().catch(() => ({}));
 
         if (response.status === 409) {
-          await waitForPaymentConfirmation(checkoutToken);
+          if (setupData.code === "PAYMENT_ALREADY_COMPLETED") {
+            await waitForPaymentConfirmation(checkoutToken);
+            return;
+          }
+
+          if (setupData.code === "PAYMENT_SETUP_IN_PROGRESS") {
+            setPaymentStatus(
+              setupData.message ||
+              "Payment setup is still in progress. Please wait and refresh shortly."
+            );
+            return;
+          }
+
+          setPaymentStatus(
+            "We could not confirm the payment setup status. Please do not retry yet.",
+            "error"
+          );
           return;
         }
 
@@ -859,7 +877,7 @@
 
       } catch (error) {
         isPaying = false;
-        payButton.disabled = false;
+        payButton.disabled = !cardReady || !cardCompleted;
         payButton.textContent = "Pay First Instalment";
 
         setPaymentStatus(

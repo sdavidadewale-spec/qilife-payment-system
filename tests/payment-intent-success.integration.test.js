@@ -9,7 +9,9 @@ process.env.DB_NAME = "qilife_test_db";
 
 const pool = require("../db");
 const router = require("../routes/webhooks");
-const { addMonthsClamped } = require("../utils/payment-dates");
+const {
+  getMonthlyInstalmentDueDate,
+} = require("../utils/payment-dates");
 
 const webhookHandler = router.stack
   .find((layer) => layer.route?.path === "/")
@@ -62,6 +64,7 @@ async function createFixture() {
     email: `payment-success-${suffix}@example.test`,
     eventIds: [],
     paymentIds: [],
+    checkoutDate: "2026-11-04",
   };
 
   try {
@@ -106,9 +109,10 @@ async function createFixture() {
            currency,
            status,
            airwallex_payment_id,
-           processing_started_at
+           processing_started_at,
+           payment_consent_start_date
          )
-         VALUES ($1, $2, $3, 'SGD', $4, $5, $6)
+         VALUES ($1, $2, $3, 'SGD', $4, $5, $6, $7)
          RETURNING id`,
         [
           fixture.subscriptionId,
@@ -117,6 +121,7 @@ async function createFixture() {
           instalment.status,
           instalment.number === 1 ? fixture.paymentIntentId : null,
           instalment.number === 1 ? new Date() : null,
+          instalment.number === 1 ? fixture.checkoutDate : null,
         ]
       );
 
@@ -215,7 +220,12 @@ test(
            processing_started_at,
            processing_claim_token,
            airwallex_payment_intent_status,
-           to_char(due_date, 'YYYY-MM-DD') AS due_date
+           to_char(due_date, 'YYYY-MM-DD') AS due_date,
+           to_char(payment_consent_start_date, 'YYYY-MM-DD') AS checkout_date,
+           to_char(
+             paid_at AT TIME ZONE 'Asia/Singapore',
+             'YYYY-MM-DD'
+           ) AS paid_date_singapore
          FROM payments
          WHERE subscription_id = $1
          ORDER BY instalment_number`,
@@ -248,28 +258,24 @@ test(
       assert.equal(second.status, "pending");
       assert.equal(third.status, "pending");
 
-      const paidDateResult = await pool.query(
-        `SELECT to_char(
-           paid_at AT TIME ZONE 'Asia/Singapore',
-           'YYYY-MM-DD'
-         ) AS paid_date
-         FROM payments
-         WHERE id = $1`,
-        [fixture.firstPaymentId]
-      );
-
-      const firstPaidDate = paidDateResult.rows[0].paid_date;
+      const firstPaidDate = first.paid_date_singapore;
 
       assert.ok(firstPaidDate);
+      assert.equal(first.checkout_date, fixture.checkoutDate);
 
       assert.equal(
         second.due_date,
-        addMonthsClamped(firstPaidDate, 1)
+        getMonthlyInstalmentDueDate(firstPaidDate, 2)
       );
 
       assert.equal(
         third.due_date,
-        addMonthsClamped(firstPaidDate, 2)
+        getMonthlyInstalmentDueDate(firstPaidDate, 3)
+      );
+
+      assert.ok(
+        second.due_date > firstPaidDate,
+        "Second instalment must be due after the first payment date"
       );
 
       let subscriptionResult = await pool.query(
