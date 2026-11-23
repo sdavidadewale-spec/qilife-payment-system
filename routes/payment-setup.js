@@ -12,6 +12,7 @@ const {
   createAirwallexCustomer,
   createAirwallexPaymentIntent,
   retrieveAirwallexPaymentIntent,
+  listAirwallexPaymentAttempts,
 } = require("../airwallex");
 
 // Only allow a valid HTTPS hosted checkout URL.
@@ -328,6 +329,70 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
       payment,
       payment.airwallex_payment_id || null
     );
+
+    // Before reusing an existing PaymentIntent, check its latest
+    // Airwallex attempt. Only a confirmed terminal failure can be retried.
+    if (payment.airwallex_payment_id) {
+      const attempts = await listAirwallexPaymentAttempts(intent.id);
+
+      if (!Array.isArray(attempts)) {
+        throw new Error(
+          "Airwallex returned an invalid Payment Attempt list"
+        );
+      }
+
+      for (const attempt of attempts) {
+        if (
+          !attempt ||
+          !attempt.id ||
+          attempt.payment_intent_id !== intent.id ||
+          !attempt.status ||
+          Number(attempt.amount).toFixed(2) !==
+            Number(payment.amount).toFixed(2) ||
+          String(attempt.currency).toUpperCase() !==
+            String(payment.currency).toUpperCase()
+        ) {
+          throw new Error(
+            "Airwallex returned an invalid or mismatched Payment Attempt"
+          );
+        }
+      }
+
+      const latestAttemptId = intent.latest_payment_attempt?.id || null;
+
+      if (attempts.length > 0 || latestAttemptId) {
+        const latestAttempt = attempts.find(
+          attempt => attempt.id === latestAttemptId
+        );
+
+        if (!latestAttempt) {
+          throw new Error(
+            "The latest Airwallex Payment Attempt could not be verified"
+          );
+        }
+
+        const retryableStatuses = new Set([
+          "FAILED",
+          "EXPIRED",
+          "CANCELLED",
+        ]);
+
+        const latestStatus = String(latestAttempt.status).toUpperCase();
+
+        if (!retryableStatuses.has(latestStatus)) {
+          console.error(
+            "First PaymentIntent has an attempt that is not safe to retry:",
+            intent.id,
+            latestStatus
+          );
+
+          return res.status(422).json({
+            message:
+              "Payment setup needs attention. Please contact QiLife support. Do not retry this payment.",
+          });
+        }
+      }
+    }
 
     // Save the PaymentIntent in both payment records.
     const saveClient = await pool.connect();

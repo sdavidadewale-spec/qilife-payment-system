@@ -13,6 +13,10 @@ const airwallex = require("../airwallex");
 
 const createCalls = [];
 let customerCreationCalls = 0;
+let retrieveIntentResponse = null;
+let retrieveIntentError = null;
+let paymentAttemptsResponse = [];
+let paymentAttemptsError = null;
 
 airwallex.createAirwallexCustomer = async () => {
   customerCreationCalls += 1;
@@ -20,7 +24,23 @@ airwallex.createAirwallexCustomer = async () => {
 };
 
 airwallex.retrieveAirwallexPaymentIntent = async () => {
-  throw new Error("Unexpected PaymentIntent retrieval in this test");
+  if (retrieveIntentError) {
+    throw retrieveIntentError;
+  }
+
+  if (!retrieveIntentResponse) {
+    throw new Error("Unexpected PaymentIntent retrieval in this test");
+  }
+
+  return structuredClone(retrieveIntentResponse);
+};
+
+airwallex.listAirwallexPaymentAttempts = async () => {
+  if (paymentAttemptsError) {
+    throw paymentAttemptsError;
+  }
+
+  return structuredClone(paymentAttemptsResponse);
 };
 
 airwallex.createAirwallexPaymentIntent = async (request) => {
@@ -240,6 +260,48 @@ async function createFixture() {
 
     throw error;
   }
+}
+
+async function prepareExistingPaymentIntent(fixture, attemptStatus) {
+  const paymentIntentId = `int_mock_${crypto.randomUUID()}`;
+  const attemptId = `att_mock_${crypto.randomUUID()}`;
+
+  await pool.query(
+    `UPDATE payments
+     SET status = 'processing',
+         airwallex_payment_id = $1,
+         processing_started_at = NOW() - INTERVAL '6 minutes'
+     WHERE id = $2`,
+    [paymentIntentId, fixture.firstPaymentId]
+  );
+
+  retrieveIntentResponse = {
+    id: paymentIntentId,
+    status: "REQUIRES_PAYMENT_METHOD",
+    merchant_order_id: fixture.firstPaymentId,
+    amount: 100,
+    currency: "SGD",
+    updated_at: new Date().toISOString(),
+    client_secret: "mock_client_secret",
+    latest_payment_attempt: {
+      id: attemptId,
+    },
+  };
+
+  paymentAttemptsResponse = [
+    {
+      id: attemptId,
+      payment_intent_id: paymentIntentId,
+      status: attemptStatus,
+      amount: 100,
+      currency: "SGD",
+    },
+  ];
+
+  retrieveIntentError = null;
+  paymentAttemptsError = null;
+
+  return { paymentIntentId, attemptId };
 }
 
 async function cleanupFixture(fixture) {
@@ -493,6 +555,94 @@ test(
         "REQUIRES_PAYMENT_METHOD"
       );
     } finally {
+      await cleanupFixture(fixture);
+    }
+  }
+);
+
+test(
+  "existing first payment blocks checkout while its latest attempt is pending",
+  async () => {
+    const fixture = await createFixture();
+
+    try {
+      await prepareExistingPaymentIntent(
+        fixture,
+        "PENDING_AUTHORIZATION"
+      );
+
+      const result = await sendCheckoutRequest(fixture.token);
+
+      assert.equal(result.statusCode, 422);
+      assert.equal(result.responseBody.client_secret, undefined);
+      assert.match(result.responseBody.message, /Do not retry this payment/);
+    } finally {
+      retrieveIntentResponse = null;
+      retrieveIntentError = null;
+      paymentAttemptsResponse = [];
+      paymentAttemptsError = null;
+      await cleanupFixture(fixture);
+    }
+  }
+);
+
+test(
+  "existing first payment allows checkout after its latest attempt fails",
+  async () => {
+    const fixture = await createFixture();
+
+    try {
+      await prepareExistingPaymentIntent(fixture, "FAILED");
+
+      const result = await sendCheckoutRequest(fixture.token);
+
+      assert.equal(result.statusCode, 200);
+      assert.equal(
+        result.responseBody.payment_intent_status,
+        "REQUIRES_PAYMENT_METHOD"
+      );
+      assert.equal(
+        result.responseBody.client_secret,
+        "mock_client_secret"
+      );
+      assert.equal(
+        result.responseBody.payment_intent_id,
+        retrieveIntentResponse.id
+      );
+    } finally {
+      retrieveIntentResponse = null;
+      retrieveIntentError = null;
+      paymentAttemptsResponse = [];
+      paymentAttemptsError = null;
+      await cleanupFixture(fixture);
+    }
+  }
+);
+
+test(
+  "existing first payment blocks checkout when Airwallex attempt lookup fails",
+  async () => {
+    const fixture = await createFixture();
+
+    try {
+      await prepareExistingPaymentIntent(fixture, "FAILED");
+      paymentAttemptsError = new Error(
+        "Simulated Payment Attempt lookup failure"
+      );
+
+      const result = await sendCheckoutRequest(fixture.token);
+
+      assert.equal(result.statusCode, 500);
+      assert.equal(result.responseBody.client_secret, undefined);
+      assert.equal(
+        result.responseBody.message,
+        "Could not prepare the first payment"
+      );
+    } finally {
+      retrieveIntentResponse = null;
+      retrieveIntentError = null;
+      paymentAttemptsResponse = [];
+      paymentAttemptsError = null;
       await cleanupFixture(fixture);
     }
   }

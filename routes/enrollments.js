@@ -54,7 +54,9 @@ router.get("/checkout/:token", enrollmentStatusLimiter, async (req, res) => {
           currency,
           status,
           due_date,
-          paid_at
+          paid_at,
+          airwallex_payment_intent_status,
+          airwallex_payment_intent_updated_at
        FROM payments
        WHERE subscription_id = $1
        ORDER BY instalment_number ASC`,

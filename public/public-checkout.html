@@ -568,10 +568,7 @@
       }
 
       if (!cardMounted) {
-        cardElement.mount("card-container");
-        cardMounted = true;
-
-        // Attach handlers after mount, once
+        // Attach handlers before mounting, once
         cardElement.on("ready", () => {
           console.log("AWX ready");
           cardReady = true;
@@ -590,6 +587,9 @@
         cardElement.on("focus", e => {
           console.log("AWX focus", JSON.stringify(e.detail));
         });
+
+        cardElement.mount("card-container");
+        cardMounted = true;
       }
     }
 
@@ -876,14 +876,14 @@
         await waitForPaymentConfirmation(checkoutToken);
 
       } catch (error) {
-        isPaying = false;
-        payButton.disabled = !cardReady || !cardCompleted;
-        payButton.textContent = "Pay First Instalment";
+        payButton.disabled = true;
+        payButton.textContent = "Checking Payment...";
 
         setPaymentStatus(
-          error.message || "Your payment could not be completed. Please check your card details and try again.",
-          "error"
+          "We could not confirm the payment result. Please do not pay again while we check its status."
         );
+
+        await waitForPaymentConfirmation(checkoutToken);
       }
     });
 

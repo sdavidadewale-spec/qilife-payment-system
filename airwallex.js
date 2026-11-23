@@ -303,6 +303,52 @@ async function retrieveAirwallexPaymentIntent(paymentIntentId) {
   );
 }
 
+async function listAirwallexPaymentAttempts(paymentIntentId) {
+  if (!paymentIntentId) {
+    throw new Error("PaymentIntent ID is required");
+  }
+
+  const attempts = [];
+  let pageNum = 0;
+  const pageSize = 1000;
+  const maxPages = 100;
+
+  while (pageNum < maxPages) {
+    const params = new URLSearchParams({
+      payment_intent_id: paymentIntentId,
+      page_num: String(pageNum),
+      page_size: String(pageSize),
+    });
+
+    const response = await airwallexRequest(
+      "GET",
+      `/api/v1/pa/payment_attempts?${params.toString()}`
+    );
+
+    if (
+      !response ||
+      !Array.isArray(response.items) ||
+      typeof response.has_more !== "boolean"
+    ) {
+      throw new Error(
+        "Airwallex returned an invalid Payment Attempt response"
+      );
+    }
+
+    attempts.push(...response.items);
+
+    if (!response.has_more) {
+      return attempts;
+    }
+
+    pageNum += 1;
+  }
+
+  throw new Error(
+    "Airwallex Payment Attempt results exceeded the safe page limit"
+  );
+}
+
 async function retrieveAirwallexPaymentConsent(paymentConsentId) {
   if (!paymentConsentId) {
     throw new Error("Payment Consent ID is required");
@@ -324,5 +370,6 @@ module.exports = {
   createRecurringAirwallexPaymentIntent,
   confirmAirwallexPaymentIntent,
   retrieveAirwallexPaymentIntent,
+  listAirwallexPaymentAttempts,
   retrieveAirwallexPaymentConsent,
 };
