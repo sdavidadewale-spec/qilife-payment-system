@@ -567,7 +567,9 @@
       }
 
       if (!cardMounted) {
-        // Attach handlers before mounting, once
+        cardElement.mount("card-container");
+        cardMounted = true;
+
         cardElement.on("ready", () => {
           console.log("AWX ready");
           cardReady = true;
@@ -595,9 +597,6 @@
         cardElement.on("focus", e => {
           console.log("AWX focus", JSON.stringify(e.detail));
         });
-
-        cardElement.mount("card-container");
-        cardMounted = true;
       }
     }
 
