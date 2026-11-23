@@ -56,6 +56,7 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
   }
 
   let payment;
+  let processingClaimToken = null;
 
   try {
     const { token } = req.params;
@@ -222,15 +223,19 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
         : todayInSingapore;
 
       // Claim the payment before contacting Airwallex.
+      // A recovery attempt receives a new token.
+      processingClaimToken = crypto.randomUUID();
+
       await client.query(
         `UPDATE payments
          SET status = 'processing',
              processing_started_at = NOW(),
+             processing_claim_token = $3,
              payment_consent_start_date =
                COALESCE(payment_consent_start_date, $2),
              last_error = NULL
          WHERE id = $1`,
-        [payment.id, startDate]
+        [payment.id, startDate, processingClaimToken]
       );
 
       await client.query("COMMIT");
@@ -405,12 +410,14 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
          SET airwallex_payment_id = $1,
              last_error = NULL
          WHERE id = $2
+           AND status = 'processing'
+           AND processing_claim_token = $3
            AND (
              airwallex_payment_id IS NULL
              OR airwallex_payment_id = $1
            )
          RETURNING id`,
-        [intent.id, payment.id]
+        [intent.id, payment.id, processingClaimToken]
       );
 
       if (saveResult.rowCount !== 1) {
@@ -512,10 +519,12 @@ router.post("/checkout/:token/payment-intent", paymentSetupLimiter, async (req, 
           `UPDATE payments
            SET last_error = $1
            WHERE id = $2
-             AND status = 'processing'`,
+             AND status = 'processing'
+             AND processing_claim_token = $3`,
           [
             String(error.message).slice(0, 1000),
             payment.id,
+            processingClaimToken,
           ]
         );
       } catch (saveError) {
