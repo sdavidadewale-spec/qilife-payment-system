@@ -377,7 +377,6 @@
     let cardElement = null;
     let cardMounted = false;
     let cardReady = false;
-    let cardCompleted = false;
     let sdkInitialized = false;
     let currentPaymentSetup = null;
 
@@ -572,7 +571,6 @@
         cardElement.on("ready", () => {
           console.log("AWX ready");
           cardReady = true;
-          payButton.disabled = !cardCompleted || isPaying;
           setPaymentStatus("Enter your card details to continue.");
         });
 
@@ -580,8 +578,8 @@
           const detail = (event && event.detail) || {};
           console.log("AWX change", JSON.stringify(detail));
 
-          cardCompleted = detail.complete === true || detail.completed === true;
-          payButton.disabled = !cardReady || !cardCompleted || isPaying;
+          cardReady = detail.complete === true || detail.completed === true;
+          payButton.disabled = !cardReady || isPaying;
         });
 
         cardElement.on("focus", e => {
