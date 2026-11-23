@@ -575,10 +575,20 @@
         });
 
         cardElement.on("change", event => {
-          const detail = (event && event.detail) || {};
-          console.log("AWX change", JSON.stringify(detail));
+          const detail = (event && event.detail) || event || {};
+          const hasValidationError = Boolean(detail.error);
 
-          cardReady = detail.complete === true || detail.completed === true;
+          console.log("AWX change", {
+            complete: detail.complete,
+            completed: detail.completed,
+            empty: detail.empty,
+            errorCode: detail.error?.code
+          });
+
+          cardReady =
+            (detail.complete === true || detail.completed === true) &&
+            !hasValidationError;
+
           payButton.disabled = !cardReady || isPaying;
         });
 
